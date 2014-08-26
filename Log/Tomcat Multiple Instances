@@ -1,0 +1,44 @@
+PREREQUISITI:
+
+Installa tomcat7 e java 1.8
+
+1) Settare java 1.8 per tomcat:
+
+	gksudo gedit /etc/default/tomcat7
+
+Scommenta la riga #JAVA_HOME e metti il percorso della cartella di java 1.8:
+
+	JAVA_HOME=/usr/lib/jvm/java-8-oracle/
+
+2) Crea /srv/tomcat
+
+3) Rendi l'utente di tomcat proprietario
+sudo chown -R tomcat7:tomcat7 /srv/tomcat 
+
+4) dentro a /srv/tomcat, crea quante cartelle vuoi, ogni cartella con il nome dell'istanza.
+Es: /srv/tomcat/t1 e /srv/tomcat/t2
+
+5) dentro alla cartella dell'istanza, crea queste cartelle:
+conf  logs  temp  webapps  work
+
+6) copia dentro alla cartella conf i file che sono in /etc/tomcat7
+
+7) Modifica il conf/server.xml:
+Scommenta dove dice "Define Ajp port Connector"
+Cambia il numero di porta per lo shutdown, ajp, connector (ogni istanza deve avere un numero di porta diverso per ognuna delle 3)
+
+8) crea in /srv/tomcat una cartella scripts, in cui metti, per ogni istanza, un file chiamato <nome istanza>start.sh e <nome istanza>stop.sh
+
+9) start_<nome istanza>.sh
+
+export CATALINA_HOME=/usr/share/tomcat7
+export CATALINA_BASE=/srv/tomcat/t1
+cd $CATALINA_HOME/bin
+./startup.sh
+
+10) stop_<nome istanza>.sh
+
+export CATALINA_HOME=/usr/share/tomcat7
+export CATALINA_BASE=/srv/tomcat/t1
+cd $CATALINA_HOME/bin
+./shutdown.sh
