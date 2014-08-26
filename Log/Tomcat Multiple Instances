@@ -10,6 +10,12 @@ Scommenta la riga #JAVA_HOME e metti il percorso della cartella di java 1.8:
 
 	JAVA_HOME=/usr/lib/jvm/java-8-oracle/
 
+1b) Elimina startup dell'istanza di default tomcat7:
+
+sudo service tomcat67stop
+	
+sudo update-rc.d -f tomcat7 remove
+
 2) Crea /srv/tomcat
 
 3) Rendi l'utente di tomcat proprietario
