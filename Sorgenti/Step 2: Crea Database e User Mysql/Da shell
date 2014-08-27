@@ -1,0 +1,9 @@
+mysql -u root -prootpwd < comandi
+
+TODO:
+
+Applicazione che scrive file comandi da 0 settando database, user e passowrd come parametri
+
+Scritto il file, l'applicazione farà partire il comando scritto nella prima riga
+
+
