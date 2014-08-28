@@ -52,3 +52,5 @@ cd $CATALINA_HOME/bin
 N.B.
 Quando chiami lo stop.sh, da molte AVVERTENZE, però funziona.
 Se non funziona è perchè è stata generata un'eccezione
+
+TODO: avviare tutte le istanze allo startup del server
