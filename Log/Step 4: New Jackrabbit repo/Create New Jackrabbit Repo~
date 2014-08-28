@@ -37,9 +37,3 @@ in precedenza da solo
 - Disabilita utente anonymous per il repository
 
 - Cambia password all'admin del repository
-
-- Cancella .lock che viene creato
-
-- Riavvia Tomcat per rendere effettive le modifiche degli utenti
-
-- TODO: Controlla che il .lock non ci sia dopo il riavvio (se c'è cancellalo)
