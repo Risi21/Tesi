@@ -1,0 +1,35 @@
+1) Fare Un file bash .sh per installare automaticamente tomcat7, Lamp, phpmyadmin
+
+2) Nello stesso file crea database Mysql e utente per la gestione delleistanze multiple di tomcat:
+
+Nome DB: JRSAAS
+Nome User: ADMIN
+Password: ADMIN_PWD
+
+grant usage on *.* to ADMIN@localhost identified by 'ADMIN_PWD';
+grant all privileges on JRSAAS.* to ADMIN@localhost;
+
+Contiene 2 tabelle: INSTANCE e CUSTOMER
+
+INSTANCE contiene le info dell'istanza di tomcat e del repository jackrabbit associato
+CUSTOMER i dati del cliente
+
+Relazione 1-n 
+
+DDL:
+
+CREATE TABLE INSTANCE(
+
+Nome Varchar(30) not null,
+Connector_Port integer not null,
+Shutdown_Port integer not null,
+Ajp_Port integer not null,
+primary key (Nome)    
+    
+    );
+
+//TODO: 
+/*
+Aggiungere chiave esterna all'utente che si registra nel sito
+Aggiungere informazioni repository jackrabbit (path, nome utente, password, ...)
+*/
