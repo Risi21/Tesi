@@ -1,0 +1,115 @@
+TOCHECK: tomcat7:tomcat7 utente unico per ogni istanza di tomcat, in /etc/default???
+
+1) Installa Tomcat, MySql, Lamp, Phpmyadmin, maven, netbeans, ...
+
+--Copia in /usr/share/tomcat7/lib i 2 pacchetti jar: 
+
+jcr-2.0.jar
+mysql-connector-java-5.1.32-bin.jar
+
+----------------------------------------------------------------
+
+--Assicurati che tomcat usi java 1.8
+
+Cancella le altre versioni di java in /usr/lib/jvm, mantieni solo la cartella java-8-oracle
+
+Installa tomcat7 e java 1.8
+
+1) Settare java 1.8 per tomcat:
+
+	gksudo gedit /etc/default/tomcat7
+
+Scommenta la riga #JAVA_HOME e metti il percorso della cartella di java 1.8:
+
+	JAVA_HOME=/usr/lib/jvm/java-8-oracle/
+
+1b) Elimina startup dell'istanza di default tomcat7:
+
+sudo service tomcat67stop
+	
+sudo update-rc.d -f tomcat7 remove
+
+------------------------------------------------------------------
+
+-- Aggiungi 3 link simbolici: (Risolve bug di Tomcat)
+
+WARNING: Problem with directory [/usr/share/tomcat7/shared], exists: [false], isDirectory: [false], canRead: [false]
+
+The warnings go away when the following symbolic links are added to /usr/share/tomcat7:
+
+sudo ln -s /var/lib/tomcat7/common/ common
+sudo ln -s /var/lib/tomcat7/server/ server
+sudo ln -s /var/lib/tomcat7/shared/ shared
+
+--------------------------------------------------------------------------------------------
+
+--Crea le cartelle /srv/tomcat/instances e /srv/tomcat/scripts e /srv/repo
+--Tutte le cartelle sono proprietarie dell'utente tomcat7:tomcat7
+
+sudo chown -R tomcat7:tomcat7 /srv/tomcat/instances
+
+------------------------------------------------------------------------------------------------
+
+--Compila Jar Per Creazione Automatica delle istanze di Tomcat e repository Jackrabbit
+(Metti dentro al jar jackrabit-webapp.war in /export/jackrabbit)
+
+Usa build.sh per compilare e mettere jackrabbit.war dentro al jar
+
+-----------------------------------------------------------------------------------------------------
+
+2) Db in MySql  JRSAAS_CONFIG
+
+Contiene Tabella INSTANCE
+ 
+per ogni istanza si memorizzano le 3 porte che usa e il suo nome
+(Le porte sono scelte in un range dove sia le well-known port che le porte non registrate non ci sono (vedi su wikipedia))
+
+Colonne: 	Name 	Connector_Port 	Shutdown_Port 	Ajp_Port
+
+DDL:
+
+CREATE TABLE INSTANCE(
+
+Nome Varchar(30) not null,
+Connector_Port integer not null,
+Shutdown_Port integer not null,
+Ajp_Port integer not null,
+primary key (Nome)    
+    
+    );
+
+Range Connector Port: 11000 - 11999
+Range Shutdown Port: 12000 - 12999
+Range Ajp Port: 13000 - 13999
+
+-----------------------------------------------------------------------
+
+Creazione utente mysql che ha diritti solo per database JRSAAS_CONFIG:
+
+Nome DB: JRSAAS_CONFIG
+Nome User: USER_JRSAAS
+Password: USER_JRSAAS_PWD
+
+L'utente ha il privilegio di poter creare nuovi database e di esserne il proprietario
+
+grant usage on *.* to USER_JRSAAS@localhost identified by 'USER_JRSAAS_PWD';
+grant all privileges on JRSAAS_CONFIG.* to USER_JRSAAS@localhost;
+
+Contiene 2 tabelle: INSTANCE e CUSTOMER
+
+INSTANCE contiene le info dell'istanza di tomcat e del repository jackrabbit associato
+CUSTOMER i dati del cliente
+
+Relazione 1-n 
+
+---------------------------------------------------------------------------------------------------------------
+
+Definire in Constants.java 2 utenti Mysql: USER_JRSAAS e  ADMIN_JRSAAS
+
+ADMIN_JRSAAS ha gli stessi privilegi della root definita in fase di installazione di MySql
+
+USER_JRSAAS ha tutti i privilegi sono per il Database JRSAAS_CONFIG, se ne può creare uno nuovo o usare lo stesso
+utente di ADMIN_JRSAAS.
+
+-----------------------------------------------------------------------------------------------------------------------
+

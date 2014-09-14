@@ -1,0 +1,76 @@
+TOCHECK: tomcat7:tomcat7 utente unico per ogni istanza di tomcat, in /etc/default???
+
+1) Crea la cartella dell'istanza in /srv/tomcat/instances/<nome istanza>
+
+--crea tutte le sottocartelle dell'istanza e riempi la cartella /conf copiando i file dall'istanza di tomcat installata di default, non è un link simbolico
+dentro alla cartella dell'istanza, crea queste cartelle:
+
+conf  logs  temp  webapps  work
+
+copia dentro alla cartella conf i file che sono in /etc/tomcat7
+
+Assegna proprietario l'utente tomcat per tutte le sottocartelle:
+sudo chown -R tomcat7:tomcat7 /srv/tomcat/instances/<nome istanza>/conf
+
+-----------------------------------------------------------------------------
+
+2) Cancella e crea file server.xml, in /srv/tomcat/instances/<nome istanza>/conf/server.xml
+setta le 3 porte con quelle trovate libere, sia sul sistema che nella tabella INSTANCE fra tutte le istanze di tomcat (anche se non sono in running)
+
+Modifica il conf/server.xml:
+Scommenta dove dice "Define Ajp port Connector"
+Cambia il numero di porta per lo shutdown, ajp, connector (ogni istanza deve avere un numero di porta diverso per ognuna delle 3)
+
+--------------------------------------------------------------
+
+3) Crea i file di script.sh per avviare / stoppare l'istanza di tomcat creata prima
+/srv/tomcat/scripts/start_<nome istanza>.sh
+/srv/tomcat/scripts/stop_<nome istanza>.sh 
+
+start_<nome istanza>.sh
+
+export CATALINA_HOME=/usr/share/tomcat7
+export CATALINA_BASE=/srv/tomcat/t1
+cd $CATALINA_HOME/bin
+./startup.sh
+
+stop_<nome istanza>.sh
+
+export CATALINA_HOME=/usr/share/tomcat7
+export CATALINA_BASE=/srv/tomcat/t1
+cd $CATALINA_HOME/bin
+./shutdown.sh
+
+restart_<nome istanza>.sh
+
+sh /srv/tomcat/scripts/stop_<nome istanza>.sh
+sh /srv/tomcat/scripts/start_<nome istanza>.sh
+
+Rendi gli script eseguibili:
+chmod u+x stop_<nome istanza>.sh
+
+---------------------------------------------------------------------------
+
+4) Esporta il jackrabbit.war da dentro al jar in /srv/tomcat/instances/<nome istanza>/webapps/jackrabbit.war
+
+5) Avvia l'istanza di tomcat, così deploya il .war
+
+6) Aspetta che tomcat deploya il .war (fa un check, finchè non viene creato il file WEB-INF/web.xml sta in attesa)
+
+7) Crea nuovo repository:
+
+7a) Crea nuovo database Mysql col prefisso JRSAAS_REPO_<nome istanza>
+
+7b) Crea la cartella del repository in /srv/repo/<nome istanza>
+
+7c) Dentro alla cartella del (7b) crea repository.xml (settando l'admin del repo) e il bootstrap.properties
+
+7d) Cancella e crea /srv/tomcat/instances/<nome istanza>/webapps/jackrabbit/WEB-INF/web.xml
+
+7e) Riavvia Tomcat richiamando lo script di restart
+
+7f) Aspetta che Il repository venga creato
+
+7g) Cambia la password dell'admin del repo e disabilita l'utente anonymous
+
+7h) Riavvia tomcat per rendere effettive le modifiche

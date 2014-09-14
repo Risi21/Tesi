@@ -1,7 +1,0 @@
-create database auto3;
-
-grant usage on *.* to user3@localhost identified by 'user'3;
-
-grant all privileges on auto3.* to user3@localhost;
-
-exit
