@@ -112,10 +112,6 @@ public class Main {
         Process p = Runtime.getRuntime().exec("sudo mkdir " + TOMCAT_PATH + "/" + instance_name);
         p.waitFor();  
         
-        //cambia proprietario all'utente tomcat
-        System.out.println("\r\nCambio Proprietario della cartella all'utente tomcat:\r\nsudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name);
-        p = Runtime.getRuntime().exec("sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name);
-        p.waitFor();
    }        
    // conf  logs  temp  webapps  work
    static void CreateInstanceSubFolders() throws IOException, InterruptedException
@@ -558,16 +554,16 @@ public class Main {
         System.out.println("\r\nAspetto che il repository venga completamente creato, controllando l'esistenza di tutte le cartelle e i file");         
         WaitForRepoCreation();
         
-        //1) cambia password admin
-        //2) disabilita anonymous
+        SetTomcatOwner();
+                
+        Stop_Instance();
         
-//NB se non lo chiamo e il programma finisce crea .lock,
-        //se lo chiamo nn lo crea
-        System.out.println("\r\nGestione utenti repository:"
-                + "Cancello utente anonymous"
-                + "Cambio password all'admin, di default la sua password è = alla username"
-                + "che è definita in repository.xml");         
-        ChangeRepoUsers();        
+        //1) cambia password admin
+        //2) disabilita anonymous     
+        ChangeRepoUsers();     
+        
+        //riavvia tomcat con le modifiche apportate agli utenti
+        Restart_Tomcat();
    }
    
    static void CreaMySqlDB() throws SQLException
@@ -594,11 +590,7 @@ public class Main {
             System.out.println("ERROR:  Directory creation failed");
             System.exit(1);
         }
-        
-        //cambia il proprietario della cartella creata a tomcat:
-        System.out.println("\r\nCambio proprietario all'utente tomcat di " + repo_path); 
-        Process p = Runtime.getRuntime().exec("chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + repo_path);
-        p.waitFor();                
+                     
    }        
    
     static void CreateBootstrapProperties()
@@ -1056,8 +1048,14 @@ public class Main {
     }    
     
     static void ChangeRepoUsers() throws RepositoryException, IOException, InterruptedException
-    {                        
+    {                
+                System.out.println("\r\nGestione utenti repository:"
+                + "Cancello utente anonymous"
+                + "Cambio password all'admin, di default la sua password è = alla username"
+                + "che è definita in repository.xml");    
         //serve per loggarsi / creare ad un repository jackrabbit
+                //avvia l'istanza, non di deve essere nessun altra istanza attiva
+                //se il .lock è presente genera un eccezione
          RepositoryConfig config = RepositoryConfig.install(new File(repo_path));
          //NB nella cartella ci devono essere i permessi di scrittura per creare il file .lock
          RepositoryImpl repository = RepositoryImpl.create(config);         
@@ -1098,15 +1096,6 @@ public class Main {
                 
         session.save();
         session.logout();                     
-        
-        //cancella file .lock che jackrabbit crea durante la creazione
-        ReleaseLock();        
-        
-        //riavvia tomcat
-        System.out.println("\r\nRiavvio server tomcat");         
-        Restart_Tomcat();              
-        
-        ReleaseLock();   
 
     }
     
@@ -1143,33 +1132,22 @@ public class Main {
         }    
         System.out.println("creato workspaces/security\r\n");        
         
-        //se è rimasto il file .lock lo cancella
-        boolean s = ReleaseLock();
-        if(s)
-        {
-            System.out.print("cancellato .lock " + s + "\r\n");        
-        }
-        else
-        {
-            System.out.print("NON cancellato .lock " + s + "\r\n");        
-        }            
-        
-        
-        
     }
     
-    //cancella il file .lock che jackrabbit crea in automatico
-    static boolean ReleaseLock()
+    static void SetTomcatOwner() throws IOException, InterruptedException
     {
-        File f = new File(repo_path + "/.lock");
-        /*while(!f.exists())
-        {
-            //f.delete();
-            //System.out.print("c");
-        } */           
-        return f.delete();
+                //cambia proprietario all'utente tomcat
+        System.out.println("\r\nCambio Proprietario della cartella all'utente tomcat:\r\nsudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name);
+        //Process p = Runtime.getRuntime().exec("echo \"" + LINUX_ROOT_PWD + "\" | sudo -S  chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name);
+        Process p = Runtime.getRuntime().exec("sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name);
+        p.waitFor();
         
-    }     
+        System.out.println("\r\nCambio Proprietario della cartella all'utente tomcat:\r\nsudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + repo_path);
+        p = Runtime.getRuntime().exec("sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + repo_path);
+        p.waitFor();        
+        
+    }        
+    
     
     static void Restart_Tomcat() throws IOException, InterruptedException
     {
@@ -1191,3 +1169,4 @@ public class Main {
     }        
     
 }
+
