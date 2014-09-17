@@ -112,10 +112,6 @@ public class Main {
         Process p = Runtime.getRuntime().exec("sudo mkdir " + TOMCAT_PATH + "/" + instance_name);
         p.waitFor();  
         
-        System.out.println("\r\nCreo la cartella del backup del repoisitory:\r\nsudo mkdir " + PATH_BACKUP + "/" + instance_name);
-        p = Runtime.getRuntime().exec("sudo mkdir " + PATH_BACKUP + "/" + instance_name);
-        p.waitFor();  
-        
    }        
    // conf  logs  temp  webapps  work
    static void CreateInstanceSubFolders() throws IOException, InterruptedException
