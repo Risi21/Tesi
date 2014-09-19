@@ -1,0 +1,122 @@
+-----------------------------------------------------------
+
+Prova 1:
+
+Mentre il FillRepo inseriva 1000 nodi, ogni nodo col session.save(), ho fatto FLUSH TABLES WITH READ LOCK;
+
+La session.save(), come gli inserimenti e cancellazioni di MySql, rimane in attesa del comando UNLOCK TABLES.
+
+OK
+
+------------------------------------------------------------
+
+Prova 2:
+
+Mentre il FillRepo inserisce 1000 nodi, faccio mysqldump con l'opzione --lock-tables.
+
+Provo a fare il restore.
+
+Funziona.
+
+OK
+
+-------------------------------------------------------
+
+Prova 3:
+
+Fare il FillRepo che inserisce un immagine che finisce nel datastore.
+
+OK
+
+---------------------------------------------------------
+
+Prova 4:
+
+Cambia diritti della cartella datastore, chmod 000
+
+il FillRepo inserisce le immagini, per ogni immagine fa session.save()
+
+Le inserisce lo stesso, come cavolo fa?
+
+FAIL
+
+------------------------------------------------------
+
+Considerazioni:
+
+Il lock in MySql rimane attivo solo per la stessa sessione, quindi non è possibile mettere i lock nelle tabelle da riga di comando
+richiamando mysql.
+
+-------------------------------------------------------
+
+Rifaccio Prova 4:
+
+Permessi di base (da Wikipedia)
+
+I permessi di base, che si applicano nell'ambito delle tre classi sopra elencate, sono:
+
+    lettura (r) – applicato ai file permette di leggerne il contenuto; applicato alle directory consente di elencare i nomi dei file e 
+delle sottodirectory che contengono;
+
+    scrittura (w) – applicato ai file permette di modificarne il contenuto; applicato alle directory permette di aggiungere o 
+rimuovere in esse dei file e altre sottodirectory;
+ da notare quindi che non sono i permessi su un file a determinare se esso può essere cancellato, 
+ma sono i permessi sulla directory che lo contiene a farlo;
+
+    esecuzione (x) – applicato ai file permette di eseguirli; applicato alle directory permette di attraversarle per accedere ai file
+ ed alle sottodirectory in esse contenute (ma non di elencarne il contenuto, per il quale serve anche il permesso di lettura).
+
+FAILED
+
+Nel datastore scrive lo stesso sia il sudo sia jackrabbit.
+
+-----------------------------------------------------
+
+Prova 5:
+
+Mettere Lock permanente in tutte le tabelle del database del MySql, così la session.save() si blocca
+
+Non si può, consigliano di eliminare privilegi.
+
+Provo ad eliminare l'utente di mysql.
+
+Il programma FillRepo genera l'eccezione Impossibile fare item.save() RepositoryException
+
+NON VA BENE, deve rimanere in attesa
+
+FAILED
+
+--------------------------------------------------------
+
+Prova 6:
+
+Ottimizza codice Step7 con ForkProcess e prova a creare le istanze nuove
+
+OK
+
+-----------------------------------------------------------
+
+Prova 7:
+
+FillRepo crea datastore molto pesante con img diverse (circa 2gb)
+
+Usa applicazione HotBackup, guarda quanto tempo ci mette.
+
+Per 5Gb circa 10 minuti (per copiare da una partizione logica diversa)
+
+--------------------------------------------------
+
+Prova 8:
+
+Mentre esegui HotBackup, prova ad inserire nodi e immagini col FillRepo.
+
+Funziona se fai il LOCK TABLES di MySql in un unico comando, cioè blocchi tutte le tabelle in un unico LOCK TABLES.
+
+Per fare il backup di 5GB ci mette circa 15 minuti, durante i quali non può essere modificato il persistence manager
+(quindi neanche il datastore tramite una sessione jackrabbit)
+
+OK
+
+--------------------------------------------------
+
+
