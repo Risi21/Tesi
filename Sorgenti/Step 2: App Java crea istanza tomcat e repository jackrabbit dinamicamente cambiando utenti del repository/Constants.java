@@ -25,10 +25,14 @@ public class Constants {
     
     public static final String TOMCAT_PATH = "/srv/tomcat/instances"; //contiene le istanze di tomcat
     public static final String TOMCAT_SCRIPTS = "/srv/tomcat/scripts"; //contiene gli scripts per avviare / stoppare le istanze di tomcat
-    public static final String TOMCAT_VERSION = "tomcat7"; //versione di tomcat installata nel server
+    public static final String CATALINA_HOME = "/usr/share/tomcat-8.0.12"; //versione di tomcat installata nel server
+    public static final String TOMCAT_CONF = "/usr/share/tomcat-8.0.12/conf"; //file di configurazione di tomcat       
+    
     public static final String ROOT_REPO_PATH = "/srv/repo"; //contiene tutti i repository di jackrabbit, hanno lo stesso nome dell'istanza di tomcat associata
     public static final String JACKRABBIT_WEBAPP_DIRNAME = "jackrabbit"; //nome della jackrabbit-webapp deployata dal .war, in tomcat/webapps
 
+    
+    
     //path dei backup dei repository
     public static final String PATH_BACKUP = "/srv/backup";
 
@@ -55,11 +59,11 @@ public class Constants {
     public static final String MYSQL_INSTANCE_COLUMN_AJP_PORT = "Ajp_Port";
     
     //utente admin del database JRSAAS_CONFIG in mysql
-    public static final String USER_JRSAAS = "ADMIN"; //username 
-    public static final String USER_JRSAAS_PWD = "ADMIN_PWD"; //password
+    public static final String USER_JRSAAS = "USER_JRSAAS"; //username 
+    public static final String USER_JRSAAS_PWD = "USER_JRSAAS_PWD"; //password
     
     //utente root di MySql, serve per poter creare un nuovo database
-    public static final String ADMIN_JRSAAS = "JRSAAS_ROOT"; //username 
-    public static final String ADMIN_JRSAAS_PWD = "JRSAAS_ROOT_PWD"; //password
+    public static final String ADMIN_JRSAAS = "root"; //username 
+    public static final String ADMIN_JRSAAS_PWD = "rootpwd"; //password
     
 }

@@ -40,6 +40,8 @@ public class Main {
      static String repo_name = "";
     //percorso alla cartella deployata di jackrabbit dentro a tomcat/webapps
     static String tomcat_webapp_jackrabbit_path = "";
+    //log di tomcat
+    static String tomcat_log = "";
     
      public static void main(String[] args) throws Exception 
     {
@@ -53,7 +55,7 @@ public class Main {
         CreateInstanceSubFolders();
         
         //Controlla che le 3 porte siano libere e non attualmente in uso
-        EditServerConf();
+        connector_port = EditServerConf();
         
         //crea start_<instance_name>.sh e stop_<instance_name>.sh
         //dentro alla cartella scripts
@@ -69,7 +71,7 @@ public class Main {
         Start_Instance();
         
         //Aspetta che Tomcat finisca di deployare jackrabbit-webapp.war
-        WaitFor_TomcatWarDeploy();
+        WaitFor_TomcatServerStartUp();
         
         //Inizio Creazione Repository (Cartelle Repository Workspaces e File repository.xml e bootstrap.properties)
         CreateNewRepo();
@@ -88,6 +90,7 @@ public class Main {
                 repo_path = ROOT_REPO_PATH + "/" + instance_name;                
                 repo_name = MYSQL_REPO_PREFIX + instance_name;
                 tomcat_webapp_jackrabbit_path = TOMCAT_PATH + "/" + instance_name + "/webapps" + "/" + JACKRABBIT_WEBAPP_DIRNAME;
+                tomcat_log = TOMCAT_PATH + "/" + instance_name + "/logs/catalina.out";
             }
             //nome della nuova istanza di tomcat
             if(args[i].equals("-dbuser"))
@@ -136,13 +139,8 @@ public class Main {
         cmd = "sudo mkdir " + TOMCAT_PATH + "/" + instance_name + "/work";
         ForkProcess(cmd);
         
-        //cambia proprietario all'utente tomcat per tutte le sottocartelle
-        cmd = "sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name;
-        System.out.println("\r\nCambio proprietario all'utente tomcat per tutte le sottocartelle:\r\n" + cmd);
-        ForkProcess(cmd);
-        
         //riempie la cartella /conf con tutti i file che si trovano in /etc/tomcat7
-        cmd = "sudo cp -a /etc/" + TOMCAT_VERSION + "/. " + TOMCAT_PATH + "/" + instance_name + "/conf/";
+        cmd = "sudo cp -a " + TOMCAT_CONF + "/. " + TOMCAT_PATH + "/" + instance_name + "/conf/";
         System.out.println("\r\nriempie la cartella /conf con tutti i file che si trovano in /etc/tomcat7:\r\n" + cmd);
         ForkProcess(cmd);
         
@@ -154,7 +152,7 @@ public class Main {
    }
    
  
-   static void EditServerConf() throws IOException, SQLException
+   static int EditServerConf() throws IOException, SQLException
    {       
        //vettore che contiene le 3 porte:
        //ports[0] = connector_port
@@ -177,6 +175,8 @@ public class Main {
        //Update INSTANCE DB, ADD 3 porte
        System.out.println("\r\nAggiunge riga alla tabella INSTANCE con le 3 porte per la nuova istanza");
        UpdateDB(ports);
+       
+       return ports[0]; //ritorna la connector port dell'istanza di tomcat
    }
    
    public static void SetTomcatPorts(int[] ports) throws IOException, SQLException
@@ -202,12 +202,14 @@ public class Main {
 
             writer = new BufferedWriter(new FileWriter(bp));
             writer.write("<?xml version='1.0' encoding='utf-8'?>\n" +
-"<!--Trovi tutti i commenti in /etc/tomcat7/server.xml-->\n" +
+"\n" +
 "<Server port=\"" + ports[1] + "\" shutdown=\"SHUTDOWN\">\n" +
-"  <Listener className=\"org.apache.catalina.core.JasperListener\" />\n" +
+"\n" +
+"  <Listener className=\"org.apache.catalina.core.AprLifecycleListener\" SSLEngine=\"on\" />\n" +
 "  <Listener className=\"org.apache.catalina.core.JreMemoryLeakPreventionListener\" />\n" +
 "  <Listener className=\"org.apache.catalina.mbeans.GlobalResourcesLifecycleListener\" />\n" +
 "  <Listener className=\"org.apache.catalina.core.ThreadLocalLeakPreventionListener\" />\n" +
+"\n" +
 "  <GlobalNamingResources>\n" +
 "    <Resource name=\"UserDatabase\" auth=\"Container\"\n" +
 "              type=\"org.apache.catalina.UserDatabase\"\n" +
@@ -215,14 +217,19 @@ public class Main {
 "              factory=\"org.apache.catalina.users.MemoryUserDatabaseFactory\"\n" +
 "              pathname=\"conf/tomcat-users.xml\" />\n" +
 "  </GlobalNamingResources>\n" +
+"\n" +
 "  <Service name=\"Catalina\">\n" +
+"\n" +
 "    <Connector port=\"" + ports[0] + "\" protocol=\"HTTP/1.1\"\n" +
 "               connectionTimeout=\"20000\"\n" +
-"               URIEncoding=\"UTF-8\"\n" +
 "               redirectPort=\"8443\" />\n" +
+"\n" +
 "    <Connector port=\"" + ports[2] + "\" protocol=\"AJP/1.3\" redirectPort=\"8443\" />\n" +
+"\n" +
 "    <Engine name=\"Catalina\" defaultHost=\"localhost\">\n" +
+"\n" +
 "      <Realm className=\"org.apache.catalina.realm.LockOutRealm\">\n" +
+"\n" +
 "        <Realm className=\"org.apache.catalina.realm.UserDatabaseRealm\"\n" +
 "               resourceName=\"UserDatabase\"/>\n" +
 "      </Realm>\n" +
@@ -231,7 +238,7 @@ public class Main {
 "            unpackWARs=\"true\" autoDeploy=\"true\">\n" +
 "\n" +
 "        <Valve className=\"org.apache.catalina.valves.AccessLogValve\" directory=\"logs\"\n" +
-"               prefix=\"localhost_access_log.\" suffix=\".txt\"\n" +
+"               prefix=\"localhost_access_log\" suffix=\".txt\"\n" +
 "               pattern=\"%h %l %u %t &quot;%r&quot; %s %b\" />\n" +
 "\n" +
 "      </Host>\n" +
@@ -366,7 +373,7 @@ public class Main {
             File bp = new File(TOMCAT_SCRIPTS + "/start_" + instance_name + ".sh");
 
             writer = new BufferedWriter(new FileWriter(bp));
-            writer.write("export CATALINA_HOME=/usr/share/" + TOMCAT_VERSION + "\n" +
+            writer.write("export CATALINA_HOME=" + CATALINA_HOME + "\n" +
 "export CATALINA_BASE=" + TOMCAT_PATH + "/" + instance_name + "\n" +
 "cd $CATALINA_HOME/bin\n" +
 "./startup.sh");        
@@ -405,7 +412,7 @@ public class Main {
             File bp = new File(TOMCAT_SCRIPTS + "/stop_" + instance_name + ".sh");            
             
             writer = new BufferedWriter(new FileWriter(bp));
-            writer.write("export CATALINA_HOME=/usr/share/" + TOMCAT_VERSION + "\n" +
+            writer.write("export CATALINA_HOME=" + CATALINA_HOME + "\n" +
 "export CATALINA_BASE=" + TOMCAT_PATH + "/" + instance_name + "\n" +
 "cd $CATALINA_HOME/bin\n" +
 "./shutdown.sh\n"
@@ -517,14 +524,14 @@ public class Main {
    static void Start_Instance() throws IOException, InterruptedException
    {
        String cmd = "sudo sh " + TOMCAT_SCRIPTS + "/start_" + instance_name + ".sh";
-       System.out.println("\r\nAvvio istanza di tomcat richiamando lo script di start");
+       System.out.println("\r\nAvvio istanza di tomcat richiamando lo script di start: \r\n" + cmd);
        ForkProcess(cmd);
    }
    
    static void Stop_Instance() throws IOException, InterruptedException
    {
        String cmd = "sudo sh " + TOMCAT_SCRIPTS + "/stop_" + instance_name + ".sh";
-       System.out.println("\r\nFermo istanza di tomcat richiamando lo script di stop");
+       System.out.println("\r\nFermo istanza di tomcat richiamando lo script di stop: \r\n" + cmd);
        ForkProcess(cmd);
    }   
 
@@ -558,19 +565,22 @@ public class Main {
         
         //Aspetta che la cartella e i file del repository vengano creati
         //nel path prefissato
-        System.out.println("\r\nAspetto che il repository venga completamente creato, controllando l'esistenza di tutte le cartelle e i file");         
-        WaitForRepoCreation();
-        
-        SetTomcatOwner();
+        System.out.println("\r\nAspetto che il repository venga completamente creato, controllando l'esistenza di tutte le cartelle e i file");                 
+        System.out.println("\r\nAspetto quindi che l'istanza di tomcat sia partita"); 
+        WaitFor_TomcatServerStartUp();        
                 
         Stop_Instance();
+        
+        //WaitFor_LockDelete();
         
         //1) cambia password admin
         //2) disabilita anonymous     
         ChangeRepoUsers();     
         
-        //riavvia tomcat con le modifiche apportate agli utenti
-        Restart_Tomcat();
+        //avvia tomcat con le modifiche apportate agli utenti
+        Start_Instance();
+        
+        WaitFor_TomcatServerStartUp();
    }
    
    static void CreaMySqlDB() throws SQLException
@@ -1065,8 +1075,7 @@ public class Main {
                 //se il .lock è presente genera un eccezione
          RepositoryConfig config = RepositoryConfig.install(new File(repo_path));
          //NB nella cartella ci devono essere i permessi di scrittura per creare il file .lock
-         RepositoryImpl repository = RepositoryImpl.create(config);         
-         
+         RepositoryImpl repository = RepositoryImpl.create(config);                  
          
         Session session; 
         
@@ -1104,75 +1113,41 @@ public class Main {
         session.save();
         session.logout();                     
 
-    }
-    
-    static void WaitForRepoCreation() throws InterruptedException
-    {
-        File f = new File(repo_path + "/repository");
-        while(!f.exists())
-        {
-            //aspetto che venga creata cartella repository
-            Thread.sleep(2000);
-        }
-        System.out.println("creata cartella repository\r\n");
+        repository.shutdown();
         
-        f = new File(repo_path + "/workspaces");
-        while(!f.exists())
-        {
-            //aspetto che venga creata cartella workspaces
-        }
-        System.out.println("creata cartella workspaces\r\n");
-                        
-        f = new File(repo_path+ "/workspaces/default");
-        while(!f.exists())
-        {
-            //f.delete();
-            //System.out.print("c");
-        }    
-        System.out.println("creato workspaces/default\r\n");        
-        
-        f = new File(repo_path + "/workspaces/security");
-        while(!f.exists())
-        {
-            //f.delete();
-            //System.out.print("c");
-        }    
-        System.out.println("creato workspaces/security\r\n");        
-        
-    }
-    
-    static void SetTomcatOwner() throws IOException, InterruptedException
-    {
-                //cambia proprietario all'utente tomcat
-        String cmd = "sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name;
-        System.out.println("\r\nCambio Proprietario della cartella all'utente tomcat:\r\n" + cmd);
-        ForkProcess(cmd);
-        
-        cmd = "sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + repo_path;
-        System.out.println("\r\nCambio Proprietario della cartella all'utente tomcat:\r\n" + cmd);
-        ForkProcess(cmd);
-    }        
-    
+    }    
     
     static void Restart_Tomcat() throws IOException, InterruptedException
     {
         Stop_Instance();
         Start_Instance();
-    }
+    }    
     
-    static void  WaitFor_TomcatWarDeploy()
+    static void WaitFor_TomcatServerStartUp() throws IOException
     {
-        //Aspetta che tomcat deploy il .war
-        //finchè non crea la cartella WEB-INF rimani fermo nel ciclo
-        System.out.println("Tomcat sta deployando jackrabbit-webapp.war\r\n");
-        
-        Path p = Paths.get(tomcat_webapp_jackrabbit_path + "/WEB-INF/web.xml");
-        while(Files.notExists(p));
-        
-        System.out.println("\r\nTomcat ha finito di deployare jackrabbit-webapp.war\r\n");
-        
-    }
+        System.out.println("Aspetto che l'istanza di tomcat finisca di avviarsi");
+        System.out.println("Quindi finisce di deployare la webapp di jackrabbit");
+        System.out.println("LOG: " + tomcat_log);
+        while(!isTomcatUp(connector_port))
+        {
+            //aspetto
+        }
+        //pulisco log catalina.out
+        CleanLog(tomcat_log);
+    }        
     
+    /*
+    static void WaitFor_LockDelete()
+    {
+        System.out.println("Aspetto che il file .lock venga cancellato");
+        
+        File f = new File(repo_path + "/.lock");
+        while(f.exists())
+        {
+            //aspetto
+        }    
+    }        
+    */
     static int ForkProcess(String cmd) throws IOException, InterruptedException
     {
         //esporta datastore
@@ -1180,9 +1155,32 @@ public class Main {
         
         Process p = Runtime.getRuntime().exec(new String[] { "/bin/bash", "-c", cmd });
         int status = p.waitFor();
+        
+        /*//DEBUG
+        System.out.println("ERRORI:");
+            String line = "";
+        
+            BufferedReader in = new BufferedReader(new InputStreamReader(p.getErrorStream()));
+            while ((line = in.readLine()) != null) 
+            {
+                 System.out.println(line);
+            }
+            in.close();
+            
+            System.out.println("INPUT:");
+            line = "";
+        
+            in = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            while ((line = in.readLine()) != null) 
+            {
+                 System.out.println(line);
+            }
+            in.close();   
+        */
+        
         if(status == 0)
         {
-            //terminato normalmente            
+            //terminato normalmente                                         
         }
         else
         {
@@ -1198,7 +1196,52 @@ public class Main {
         }
         
         return status;
-    }     
+    }
+    
+static boolean isTomcatUp(int port) throws IOException 
+{
+    
+    BufferedReader br = null;
+        String lastLine = "";
+    
+    try 
+    {
+
+        String sCurrentLine;
+        
+        br = new BufferedReader(new FileReader(tomcat_log));
+        //arrivo a leggere l'ultima riga
+        while ((sCurrentLine = br.readLine()) != null) 
+        {
+            lastLine = sCurrentLine;
+        }
+
+    } 
+    catch (IOException e) 
+    {
+        e.printStackTrace();
+    }
+    
+    br.close();
+    
+    //System.out.println(lastLine);
+    
+    String toCheck = "org.apache.catalina.startup.Catalina.start Server startup in";
+    //se l'ultima riga è uguale allo startup del server...   
+    if(lastLine.toLowerCase().contains(toCheck.toLowerCase()))
+    {
+        return true;
+    }
+    
+    return false;
+
+}
+
+static void CleanLog(String tomcat_log)
+{
+    File toCanc = new File(tomcat_log);
+    toCanc.delete();
+}        
     
 }
 

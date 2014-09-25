@@ -108,40 +108,49 @@ public class Main {
    
    static void CreateInstanceFolder() throws IOException, InterruptedException
    {
-        System.out.println("\r\nCreo la cartella dell'istanza di Tomcat:\r\nsudo mkdir " + TOMCAT_PATH + "/" + instance_name);
-        Process p = Runtime.getRuntime().exec("sudo mkdir " + TOMCAT_PATH + "/" + instance_name);
-        p.waitFor();  
+        String cmd = "sudo mkdir " + TOMCAT_PATH + "/" + instance_name;
+        System.out.println("\r\nCreo la cartella dell'istanza di Tomcat:\r\n" + cmd);
+        ForkProcess(cmd);
+        
+        cmd = "sudo mkdir " + PATH_BACKUP + "/" + instance_name;
+        System.out.println("\r\nCreo la cartella del backup del repoisitory:\r\n" + cmd);
+        ForkProcess(cmd);
         
    }        
    // conf  logs  temp  webapps  work
    static void CreateInstanceSubFolders() throws IOException, InterruptedException
    {
+        String cmd = "sudo mkdir " + TOMCAT_PATH + "/" + instance_name + "/conf";       
         System.out.println("\r\nCreo sottocartelle conf, logs, temp, webapps, work");
-        Process p = Runtime.getRuntime().exec("sudo mkdir " + TOMCAT_PATH + "/" + instance_name + "/conf");
-        p.waitFor();
-        p = Runtime.getRuntime().exec("sudo mkdir " + TOMCAT_PATH + "/" + instance_name + "/logs");
-        p.waitFor();
-        p = Runtime.getRuntime().exec("sudo mkdir " + TOMCAT_PATH + "/" + instance_name + "/temp");
-        p.waitFor();
-        p = Runtime.getRuntime().exec("sudo mkdir " + TOMCAT_PATH + "/" + instance_name + "/webapps");
-        p.waitFor();
-        p = Runtime.getRuntime().exec("sudo mkdir " + TOMCAT_PATH + "/" + instance_name + "/work");
-        p.waitFor();  
+        ForkProcess(cmd);
+        
+        cmd = "sudo mkdir " + TOMCAT_PATH + "/" + instance_name + "/logs";
+        ForkProcess(cmd);
+        
+        cmd = "sudo mkdir " + TOMCAT_PATH + "/" + instance_name + "/temp";
+        ForkProcess(cmd);
+        
+        cmd = "sudo mkdir " + TOMCAT_PATH + "/" + instance_name + "/webapps";
+        ForkProcess(cmd);
+
+        cmd = "sudo mkdir " + TOMCAT_PATH + "/" + instance_name + "/work";
+        ForkProcess(cmd);
         
         //cambia proprietario all'utente tomcat per tutte le sottocartelle
-        System.out.println("\r\nCambio proprietario all'utente tomcat per tutte le sottocartelle:\r\n" + "sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name);
-        p = Runtime.getRuntime().exec("sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name);
-        p.waitFor();  
+        cmd = "sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name;
+        System.out.println("\r\nCambio proprietario all'utente tomcat per tutte le sottocartelle:\r\n" + cmd);
+        ForkProcess(cmd);
         
         //riempie la cartella /conf con tutti i file che si trovano in /etc/tomcat7
-        System.out.println("\r\nriempie la cartella /conf con tutti i file che si trovano in /etc/tomcat7:\r\n" + "sudo cp -a /etc/" + TOMCAT_VERSION + "/. " + TOMCAT_PATH + "/" + instance_name + "/conf/");
-        p = Runtime.getRuntime().exec("sudo cp -a /etc/" + TOMCAT_VERSION + "/. " + TOMCAT_PATH + "/" + instance_name + "/conf/");
-        p.waitFor();          
-
+        cmd = "sudo cp -a /etc/" + TOMCAT_VERSION + "/. " + TOMCAT_PATH + "/" + instance_name + "/conf/";
+        System.out.println("\r\nriempie la cartella /conf con tutti i file che si trovano in /etc/tomcat7:\r\n" + cmd);
+        ForkProcess(cmd);
+        
        //cancella il file server.xml copiato prima in /conf
-        System.out.println("\r\ncancella il file server.xml copiato prima in /conf:\r\n" + "sudo rm " + TOMCAT_PATH + "/" + instance_name + "/conf/server.xml");
-        p = Runtime.getRuntime().exec("sudo rm " + TOMCAT_PATH + "/" + instance_name + "/conf/server.xml");
-        p.waitFor();                
+        cmd = "sudo rm " + TOMCAT_PATH + "/" + instance_name + "/conf/server.xml";
+        System.out.println("\r\ncancella il file server.xml copiato prima in /conf:\r\n" + cmd);        
+        ForkProcess(cmd);
+        
    }
    
  
@@ -383,9 +392,8 @@ public class Main {
         } 
         
         //da il permesso di esecuzione allo script creato:
-        Process p = Runtime.getRuntime().exec("sudo chmod u+x " + TOMCAT_SCRIPTS + "/start_" + instance_name + ".sh");
-        p.waitFor();           
-        
+        String cmd = "sudo chmod u+x " + TOMCAT_SCRIPTS + "/start_" + instance_name + ".sh";
+        ForkProcess(cmd);
    }
    
    static void CreateScriptStop() throws IOException, InterruptedException
@@ -423,9 +431,8 @@ public class Main {
             }
         }
         
-        Process p = Runtime.getRuntime().exec("sudo chmod u+x " + TOMCAT_SCRIPTS + "/stop_" + instance_name + ".sh");
-        p.waitFor();        
-        
+        String cmd = "sudo chmod u+x " + TOMCAT_SCRIPTS + "/stop_" + instance_name + ".sh";
+        ForkProcess(cmd);
    }   
    
    static void CreateScriptRestart() throws IOException, InterruptedException
@@ -460,8 +467,8 @@ public class Main {
             }
         }
         
-        Process p = Runtime.getRuntime().exec("sudo chmod u+x " + TOMCAT_SCRIPTS + "/restart_" + instance_name + ".sh");
-        p.waitFor();            
+        String cmd = "sudo chmod u+x " + TOMCAT_SCRIPTS + "/restart_" + instance_name + ".sh";
+        ForkProcess(cmd);
    }        
    
    /*
@@ -509,16 +516,16 @@ public class Main {
    
    static void Start_Instance() throws IOException, InterruptedException
    {
+       String cmd = "sudo sh " + TOMCAT_SCRIPTS + "/start_" + instance_name + ".sh";
        System.out.println("\r\nAvvio istanza di tomcat richiamando lo script di start");
-       Process p = Runtime.getRuntime().exec("sudo sh " + TOMCAT_SCRIPTS + "/start_" + instance_name + ".sh");
-        p.waitFor();       
+       ForkProcess(cmd);
    }
    
    static void Stop_Instance() throws IOException, InterruptedException
    {
+       String cmd = "sudo sh " + TOMCAT_SCRIPTS + "/stop_" + instance_name + ".sh";
        System.out.println("\r\nFermo istanza di tomcat richiamando lo script di stop");
-       Process p = Runtime.getRuntime().exec("sudo sh " + TOMCAT_SCRIPTS + "/stop_" + instance_name + ".sh");
-        p.waitFor();       
+       ForkProcess(cmd);
    }   
 
    static void CreateNewRepo() throws SQLException, IOException, InterruptedException, RepositoryException 
@@ -1137,15 +1144,13 @@ public class Main {
     static void SetTomcatOwner() throws IOException, InterruptedException
     {
                 //cambia proprietario all'utente tomcat
-        System.out.println("\r\nCambio Proprietario della cartella all'utente tomcat:\r\nsudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name);
-        //Process p = Runtime.getRuntime().exec("echo \"" + LINUX_ROOT_PWD + "\" | sudo -S  chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name);
-        Process p = Runtime.getRuntime().exec("sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name);
-        p.waitFor();
+        String cmd = "sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + TOMCAT_PATH + "/" + instance_name;
+        System.out.println("\r\nCambio Proprietario della cartella all'utente tomcat:\r\n" + cmd);
+        ForkProcess(cmd);
         
-        System.out.println("\r\nCambio Proprietario della cartella all'utente tomcat:\r\nsudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + repo_path);
-        p = Runtime.getRuntime().exec("sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + repo_path);
-        p.waitFor();        
-        
+        cmd = "sudo chown -R " + TOMCAT_VERSION + ":" + TOMCAT_VERSION + " " + repo_path;
+        System.out.println("\r\nCambio Proprietario della cartella all'utente tomcat:\r\n" + cmd);
+        ForkProcess(cmd);
     }        
     
     
@@ -1166,7 +1171,34 @@ public class Main {
         
         System.out.println("\r\nTomcat ha finito di deployare jackrabbit-webapp.war\r\n");
         
-    }        
+    }
+    
+    static int ForkProcess(String cmd) throws IOException, InterruptedException
+    {
+        //esporta datastore
+        //dentro a /srv/backup/<repo_name>
+        
+        Process p = Runtime.getRuntime().exec(new String[] { "/bin/bash", "-c", cmd });
+        int status = p.waitFor();
+        if(status == 0)
+        {
+            //terminato normalmente            
+        }
+        else
+        {
+            //stampo errori
+            String line = "";
+        
+            BufferedReader in = new BufferedReader(new InputStreamReader(p.getErrorStream()));
+            while ((line = in.readLine()) != null) 
+            {
+                 System.out.println(line);
+            }
+            in.close();
+        }
+        
+        return status;
+    }     
     
 }
 

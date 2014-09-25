@@ -28,6 +28,10 @@ public class Constants {
     public static final String TOMCAT_VERSION = "tomcat7"; //versione di tomcat installata nel server
     public static final String ROOT_REPO_PATH = "/srv/repo"; //contiene tutti i repository di jackrabbit, hanno lo stesso nome dell'istanza di tomcat associata
     public static final String JACKRABBIT_WEBAPP_DIRNAME = "jackrabbit"; //nome della jackrabbit-webapp deployata dal .war, in tomcat/webapps
+
+    //path dei backup dei repository
+    public static final String PATH_BACKUP = "/srv/backup";
+
     //Definisce Range in cui cercare una porta per una nuova istanza di tomcat
     //per uno dei 3 servizi: connector, shutdown, ajp
     public static final int CONNECTOR_MIN = 11000;
