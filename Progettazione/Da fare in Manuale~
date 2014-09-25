@@ -4,15 +4,6 @@
 
 (fonte: http://askubuntu.com/questions/339169/how-to-install-tomcat-7-0-42-on-ubuntu-12-04-3-lts)
 
-a) scarica dal sito di apache tomcat l'ultima versione in formato tar.gz
-b) estrai il tar.gz
-c) rinomina la cartella in tomcat<versione>
-d) sposta la cartella di tomcat in /usr/share
-e) Modifica il file ~/.bashrc, aggiungi 2 righe in fondo al file:
---- export CATALINA_HOME=/usr/share/tomcat<versione>
---- export JAVA_HOME=/usr/lib/jvm/java-1.8-oracle
-f) Esegui il file ~/.bashrc per fare i 2 export
-g) Avvia tomcat con: sudo $CATALINA_HOME/bin/startup.sh
 
 
 --Copia in /usr/share/tomcat7/lib i 2 pacchetti jar: 
@@ -20,18 +11,7 @@ g) Avvia tomcat con: sudo $CATALINA_HOME/bin/startup.sh
 jcr-2.0.jar
 mysql-connector-java-5.1.32-bin.jar
 
---Crea le cartelle /srv/tomcat/instances e /srv/tomcat/scripts e /srv/repo
---Tutte le cartelle sono proprietarie dell'utente tomcat7:tomcat7
-
---Compila Jar Per Creazione Automatica delle istanze di Tomcat e repository Jackrabbit
-(Metti dentro al jar jackrabit-webapp.war in /export/jackrabbit)
-
-Usa build.sh per compilare e mettere jackrabbit.war dentro al jar
-
-
 ----------------------------------------------------------------
-
-<VECCHIO CON APT-GET>
 
 --Assicurati che tomcat usi java 1.8
 
