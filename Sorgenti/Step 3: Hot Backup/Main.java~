@@ -82,19 +82,34 @@ public class Main {
     
     static void LockTables(Connection cn) throws SQLException
     {
+        
         System.out.println("SHOW TABLES FROM " + db_name + ";");
         Statement s = cn.createStatement();
         ResultSet rs = s.executeQuery("SHOW TABLES FROM " + db_name + ";");
         
         //per ogni tabella del database scelto fa il lock
+        String cmd = "LOCK TABLES ";
         while(rs.next())
         {
             String table = rs.getString(1);
-            System.out.println("Locking table: " + table);
-            Statement lock = cn.createStatement();
-            lock.executeUpdate("LOCK TABLES " + db_name + "." + table + " READ;");
-        }                
+            //System.out.println("LOCK TABLES " + db_name + "." + table + " READ;");
+            cmd += db_name + "." + table + " READ, ";
+        } 
+
+        //elimino ultimi 2 caratteri, lo spazio finale e la virgola
+        cmd = cmd.substring(0, cmd.length()-2);
+        //fine query mysql
+        cmd += ";";
         
+        System.out.println(cmd);
+        Statement lock = cn.createStatement();
+        lock.executeUpdate(cmd);
+        
+        
+/*
+            Statement lock = cn.createStatement();
+            lock.executeUpdate("LOCK TABLES JRSAAS_CONFIG.INSTANCE READ;");
+             */   
     }
     
     static void UnLockTables(Connection cn) throws SQLException

@@ -4,17 +4,16 @@
  * and open the template in the editor.
  */
 
-package com.luca.hotbackup;
+package com.mycompany.hotbackup;
 
-import static com.luca.hotbackup.Constants.*; //importa tutte le costanti
+import static com.mycompany.hotbackup.Constants.*;
 
 import java.sql.*; //mysql
 import java.io.*; //BufferedRreader, output del processo exec
 
-
 /**
  *
- * @author luca
+ * @author ideato
  */
         //NOTA BENE
         //http://stackoverflow.com/questions/20820213/mysqldump-from-java-application
@@ -38,6 +37,8 @@ public class Main {
     {       
         CheckArguments(args);
       
+        long inizio = System.currentTimeMillis();
+        
         //inizio sessione Mysql
         Connection cn = DriverManager.getConnection("jdbc:mysql://" + MYSQL_URL + "/" + db_name + "?user=" + ADMIN_JRSAAS + "&password=" + ADMIN_JRSAAS_PWD + "");
 
@@ -54,7 +55,12 @@ public class Main {
         
         //crea un unico file chiamato backup.tar.gz che contiene
         //sia l'esportazione del persistence manager che del datastore
-        MakeTarGz();
+        //MakeTarGz();
+        
+        long fine = System.currentTimeMillis();
+        long tempo = (fine - inizio) / 1000;
+        System.out.println("Tempo di esecuzione = " + tempo + " secondi");
+        
     }
     
   static void CheckArguments(String[] args)
@@ -133,7 +139,7 @@ public class Main {
     {
         //esporta datastore
         //dentro a /srv/backup/<repo_name>        
-        String cmd = "sudo cp -r " + datastore_path + " " + repo_backup;
+        String cmd = "sudo rsync -au " + datastore_path + " " + repo_backup;
         System.out.println("\r\nEsporto datastore:\r\n" + cmd);                
         int status = ForkProcess(cmd);
         //se status != 0 ERRORE
