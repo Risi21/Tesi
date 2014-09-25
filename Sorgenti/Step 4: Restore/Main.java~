@@ -4,16 +4,16 @@
  * and open the template in the editor.
  */
 
-package com.mycompany.restore;
+package com.luca.restore;
 
-import static com.mycompany.restore.Constants.*; //importa tutte le costanti
+import static com.luca.restore.Constants.*; //importa tutte le costanti
 
 import java.sql.*; //mysql
 import java.io.*; //BufferedRreader, output del processo exec
 
 /**
  *
- * @author ideato
+ * @author luca
  */
 public class Main {
     
@@ -30,17 +30,16 @@ public class Main {
         CheckArguments(args);
       
         //Unzip tar.gz
-        long inizio = System.currentTimeMillis();
         
         Stop_Instance();
         
         //cancella cartella repository e workspaces all'interno della cartella del repository jackrabbit, verranno poi ricreate
         // /srv/repo/.../repository e workspaces
         //cancella quindi anche il datastore e tutti i worspaces
-        //Delete_RepoFolders();       
+        Delete_RepoFolders();       
         
         //cancella tutte le tabelle MySql del repository, verranno poi ricreate
-        //Delete_PersistenceManager();
+        Delete_PersistenceManager();
         
         //copia /srv/backup/.../datastore in /srv/repo/.../repository
         Restore_Datastore();
@@ -50,10 +49,6 @@ public class Main {
         
         Start_Instance();
 
-        long fine = System.currentTimeMillis();
-        long tempo = (fine - inizio) / 1000;
-        System.out.println("Tempo di esecuzione = " + tempo + " secondi");        
-        
         System.out.println("RESTORE DONE");
         
     }
@@ -132,7 +127,7 @@ public class Main {
        System.out.println("\r\nCrea cartella repository vuota: " + cmd);
        ForkProcess(cmd);      
       
-       cmd = "sudo rsync -au " + datastore_backup + " " + repo_path + "/repository/datastore";
+       cmd = "sudo cp -r " + datastore_backup + " " + repo_path + "/repository/datastore";
        System.out.println("\r\nRestore Datastore: " + cmd);
        ForkProcess(cmd);      
   }
