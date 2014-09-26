@@ -1,0 +1,12 @@
+1) Il cluster di nodi di jackrabbit scrive nello stesso datastore e persistence manager.
+Si mette un load balancer con ip pubblico.
+
+=> si usa NFS unico, se schiatta quello non funziona più niente
+
+2) Avere 2 istanze di jackrabbit separate, ognuna col suo datastore e persistence manager.
+Quando scrivo in J1 si sincronizza con J2 e viceversa.
+
+3) (figata che risparmia tante cose, ma ci vuole tempo)
+Avere 2 o più istanze di jackrabbit, con all'esterno sempre il load balancer.
+Fare app java che con gli event listener ascolta tutte le istanze, quando cambia un nodo (scrittura)
+di un jackrabbit, fa la modifica anche agli altri jackrabbit.
