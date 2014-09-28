@@ -1,0 +1,15 @@
+installazione e configurazione tomcat
+
+istanze multiple di tomcat
+
+correggere bug jackrabbit
+
+creare istanze di jackrabbit multiple con tomcat 1-1
+
+hotbackup
+
+restore
+
+test migration
+
+cluster jackrabbit con NFS
