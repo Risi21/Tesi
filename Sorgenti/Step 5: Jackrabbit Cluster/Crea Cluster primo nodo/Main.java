@@ -652,7 +652,18 @@ public class Main {
         System.out.println("\r\nCreo utente mysql " + db_user + " con permessi di lettura e scrittura solo per il db " + cluster_pm_name + "\r\n");       
         Result = s.executeUpdate("grant usage on *.* to " + db_user + "@localhost identified by '" + db_password + "';");
         Result = s.executeUpdate("grant all privileges on " + cluster_pm_name + ".* to " + db_user + "@localhost;");
-        cn.close();
+        
+        //creo tabella NODE, inserendo il primo nodo di jackrabbit:
+        Result = s.executeUpdate("CREATE TABLE " + cluster_pm_name + ".NODE(\n" +
+        "Id integer not null,\n" +
+        "Nome varchar(50) not null,\n" +
+        "primary key (Id)    \n" +
+        ");");
+        
+        //inserisce primo record: id = 1 e nome del primo nodo jackrabbit
+        Result = s.executeUpdate("INSERT INTO " + cluster_pm_name + ".NODE VALUES(1,'" + jr_node_name + "');");
+        
+         cn.close();
    }      
    
     static void CreateBootstrapProperties()
