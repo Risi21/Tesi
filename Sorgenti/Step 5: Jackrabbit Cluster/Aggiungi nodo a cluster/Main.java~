@@ -62,7 +62,6 @@ public class Main {
     static String last_jr_node_root_path = "";
     static String last_jr_node_tomcat_path = "";
     static String last_jr_node_tomcat_script_path = "";
-    static String last_jr_node_repo_path = "";
     
      public static void main(String[] args) throws Exception 
     {
@@ -72,10 +71,8 @@ public class Main {
         //trova ultimo id nodo jackrabbit, leggendo tabella NODE del pm
         //poi aggiorna tabella NODE
         FindJR_NodeName();
-                        
-        SetJR_NodeVariables();
         
-        Set_LastJR_Node_Variables();
+        SetJR_NodeVariables();
         
         CreateJR_NodeFolders();       
         
@@ -93,9 +90,9 @@ public class Main {
         ExportWarFile();
         
         //richiama lo script di start per far deployare il .war di jackrabbit
-        Start_Instance(jr_node_tomcat_scripts_path, jr_node_name);        
+        Start_Instance(jr_node_tomcat_scripts_path);        
         
-        Stop_Instance(jr_node_tomcat_scripts_path, jr_node_name);
+        Stop_Instance(jr_node_tomcat_scripts_path);
         
         //Inizio Creazione Repository (Cartelle Repository Workspaces e File repository.xml e bootstrap.properties)
         AddNewJR_Node();
@@ -137,7 +134,7 @@ public class Main {
    {
        //trova ultimo id
        String query = "SELECT ID FROM " + cluster_pm_name + ".NODE ORDER BY ID DESC;";
-        Connection cn = DriverManager.getConnection("jdbc:mysql://" + MYSQL_URL + "/" + cluster_pm_name + "?user=" + db_user + "&password=" + db_password + "");
+        Connection cn = DriverManager.getConnection("jdbc:mysql://" + MYSQL_URL + "/" + MYSQL_JRSAAS_CONFIG_DB + "?user=" + db_user + "&password=" + db_password + "");
         Statement s = cn.createStatement();
         
          //definisce nuovo Id e Nome per il nuovo nodo jackrabbit
@@ -151,8 +148,6 @@ public class Main {
          
           s.close();
         cn.close();
-        
-        System.out.println("ultimo id: " + last_jr_node_id + ", nome nodo nuovo: " + jr_node_name);
         
    }   
    
@@ -602,9 +597,9 @@ public class Main {
         }       
    }
    
-   static void Start_Instance(String script_path, String node_name) throws IOException, InterruptedException
+   static void Start_Instance(String script_path) throws IOException, InterruptedException
    {
-       String cmd = "sudo sh " + script_path + "/start_" + node_name + ".sh";
+       String cmd = "sudo sh " + script_path + "/start_" + jr_node_name + ".sh";
        System.out.println("\r\nAvvio istanza di tomcat richiamando lo script di start: \r\n" + cmd);
        ForkProcess(cmd);
        
@@ -612,9 +607,9 @@ public class Main {
         WaitFor_TomcatServerStartUp();       
    }
    
-   static void Stop_Instance(String script_path, String node_name) throws IOException, InterruptedException
+   static void Stop_Instance(String script_path) throws IOException, InterruptedException
    {
-       String cmd = "sudo sh " + script_path + "/stop_" + node_name + ".sh";
+       String cmd = "sudo sh " + script_path + "/stop_" + jr_node_name + ".sh";
        System.out.println("\r\nFermo istanza di tomcat richiamando lo script di stop: \r\n" + cmd);
        ForkProcess(cmd);
    }
@@ -632,7 +627,7 @@ public class Main {
         EditWebXml();   
         
         //ferma nodo Jackrabbit con id + alto
-        Stop_Instance(last_jr_node_tomcat_script_path, last_jr_node_name);
+        Stop_Instance(last_jr_node_tomcat_script_path);
         
         //aggiorna tabella journal del pm  
         UpdateJournalPM();
@@ -641,10 +636,10 @@ public class Main {
         CopyRepo();
         
         //riavvia istanza nodo originale        
-        Start_Instance(last_jr_node_tomcat_script_path, last_jr_node_name);
+        Start_Instance(last_jr_node_tomcat_script_path);
                 
         //avvia nuovo nodo jackrabbit
-        Start_Instance(jr_node_tomcat_scripts_path, jr_node_name);
+        Start_Instance(jr_node_tomcat_scripts_path);
    }
    
     static void CreateBootstrapProperties()
@@ -1187,7 +1182,7 @@ public class Main {
         int status = p.waitFor();
         
         //DEBUG
-        
+        /*
         System.out.println("ERRORI:");
             String line = "";
         
@@ -1207,8 +1202,8 @@ public class Main {
                  System.out.println(line);
             }
             in.close();   
+        */
         
-        /*
         if(status == 0)
         {
             //terminato normalmente                                         
@@ -1225,7 +1220,7 @@ public class Main {
             }
             in2.close();
         }
-        */
+        
         return status;
     }
     
@@ -1346,22 +1341,13 @@ static void Set_LastJR_Node_Variables()
     last_jr_node_name = cluster_name + "_" + last_jr_node_id;
     last_jr_node_root_path = cluster_root_path + "/" + last_jr_node_name;
     last_jr_node_tomcat_path = last_jr_node_root_path + "/tomcat";
-    last_jr_node_tomcat_script_path = last_jr_node_tomcat_path + "/scripts";
-    last_jr_node_repo_path = last_jr_node_root_path + "/repo";
-    
-    System.out.println(last_jr_node_name);
-    System.out.println(last_jr_node_root_path);
-    System.out.println(last_jr_node_tomcat_path);
-    System.out.println(last_jr_node_tomcat_script_path);
-    System.out.println(last_jr_node_repo_path);
-    
+    last_jr_node_tomcat_script_path = last_jr_node_tomcat_path + "/scripts";        
 }        
 
 static void UpdateJournalPM() throws SQLException
-{    
-        String query = "select REVISION_ID from " + cluster_pm_name + ".JOURNAL_LOCAL_REVISIONS where journal_id = \"" + last_jr_node_name + "\";";
-        System.out.println("\r\n\r\nUpdate Journal: " + query);
-        Connection cn = DriverManager.getConnection("jdbc:mysql://" + MYSQL_URL + "/" + cluster_pm_name + "?user=" + db_user + "&password=" + db_password + "");
+{
+        String query = "select REVISION_ID from " + cluster_pm_name + ".journal_local_revisions where journal_id = \"" + last_jr_node_name + "\";";
+        Connection cn = DriverManager.getConnection("jdbc:mysql://" + MYSQL_URL + "/" + MYSQL_JRSAAS_CONFIG_DB + "?user=" + db_user + "&password=" + db_password + "");
         Statement s = cn.createStatement();
         
          //definisce nuovo Id e Nome per il nuovo nodo jackrabbit
@@ -1370,28 +1356,15 @@ static void UpdateJournalPM() throws SQLException
          last_jr_node_revisionNumber = rs.getInt("REVISION_ID");
         
          //inserisce nuovo nodo nella tabella journal, con revision_id = a quello dell'ultimo nodo
-         int Result = s.executeUpdate("INSERT INTO " + cluster_pm_name + ".JOURNAL_LOCAL_REVISIONS VALUES (\"" + jr_node_name + "\"," + last_jr_node_revisionNumber + ");");
+         int Result = s.executeUpdate("INSERT INTO " + cluster_pm_name + ".journal_local_revisions VALUES (\"" + jr_node_name + "\"," + last_jr_node_revisionNumber + ");");
          
           s.close();
         cn.close();    
 }
 
-static void CopyRepo() throws IOException, InterruptedException
+static void CopyRepo()
 {
-        //creo cartella /srv/cluster/cluster_name/jr_node_name
-        String cmd = "sudo cp -r " + last_jr_node_repo_path + "/repository " + jr_node_repo_path;
-        System.out.println("\r\nCopia cartella repository dall'ultimo al nuovo nodo:\r\n" + cmd);
-        ForkProcess(cmd);       
-        
-        cmd = "sudo cp -r " + last_jr_node_repo_path + "/workspaces " + jr_node_repo_path;
-        System.out.println("\r\nCopia cartella workspaces dall'ultimo al nuovo nodo:\r\n" + cmd);
-        ForkProcess(cmd);       
-        
-        cmd = "sudo cp " + last_jr_node_repo_path + "/revision " + jr_node_repo_path;
-        System.out.println("\r\nCopia file revision dall'ultimo al nuovo nodo:\r\n" + cmd);
-        ForkProcess(cmd);       
-                
+    
 }        
 
 }
-
