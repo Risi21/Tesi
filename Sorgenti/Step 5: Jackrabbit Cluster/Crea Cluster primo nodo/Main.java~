@@ -873,7 +873,7 @@ public class Main {
 "    <!--\n" +
 "        Run with a cluster journal\n" +
 "    -->\n" +
-"<Cluster id=\"" + jr_node_name + "\" syncDelay=\"5000\">\n" +
+"<Cluster id=\"" + jr_node_name + "\" syncDelay=\"" + SYNC_DELAY + "\">\n" +
 "		<Journal class=\"org.apache.jackrabbit.core.journal.DatabaseJournal\">\n" +
 "			<param name=\"revision\" value=\"${rep.home}/revision\"/>\n" +
 "			<param name=\"driver\" value=\"com.mysql.jdbc.Driver\"/>\n" +

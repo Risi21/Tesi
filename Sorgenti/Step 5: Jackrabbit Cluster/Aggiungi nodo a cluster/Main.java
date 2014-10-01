@@ -1356,13 +1356,6 @@ static void Set_LastJR_Node_Variables()
     last_jr_node_tomcat_instance_path = last_jr_node_tomcat_path + "/instance";
     last_jr_node_tomcat_instance_log_path = last_jr_node_tomcat_instance_path + "/logs/catalina.out";
     
-            /*
-    System.out.println(last_jr_node_name);
-    System.out.println(last_jr_node_root_path);
-    System.out.println(last_jr_node_tomcat_path);
-    System.out.println(last_jr_node_tomcat_script_path);
-    System.out.println(last_jr_node_repo_path);
-    */
 }        
 
 static void UpdateJournalPM() throws SQLException

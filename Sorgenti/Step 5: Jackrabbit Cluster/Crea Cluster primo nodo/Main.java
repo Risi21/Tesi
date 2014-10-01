@@ -1360,10 +1360,13 @@ static String LastLine(File file)
     }
 }
 
-static void CleanLog(String tomcat_log)
+static void CleanLog(String tomcat_log) throws IOException
 {
-    File toCanc = new File(tomcat_log);
-    toCanc.delete();
+    File toClean= new File(tomcat_log);
+    //sovrascrive file cancellando tutti i caratteri
+    FileWriter f2 = new FileWriter(toClean, false);
+    f2.write("");
+    f2.close();   
 }        
     
 }
