@@ -63,6 +63,8 @@ public class Main {
     static String last_jr_node_tomcat_path = "";
     static String last_jr_node_tomcat_script_path = "";
     static String last_jr_node_repo_path = "";
+    static String last_jr_node_tomcat_instance_log_path = "";
+    static String last_jr_node_tomcat_instance_path = "";
     
      public static void main(String[] args) throws Exception 
     {
@@ -93,7 +95,7 @@ public class Main {
         ExportWarFile();
         
         //richiama lo script di start per far deployare il .war di jackrabbit
-        Start_Instance(jr_node_tomcat_scripts_path, jr_node_name);        
+        Start_Instance(jr_node_tomcat_scripts_path, jr_node_name, jr_node_tomcat_instance_log_path);        
         
         Stop_Instance(jr_node_tomcat_scripts_path, jr_node_name);
         
@@ -602,14 +604,14 @@ public class Main {
         }       
    }
    
-   static void Start_Instance(String script_path, String node_name) throws IOException, InterruptedException
+   static void Start_Instance(String script_path, String node_name, String log_file_path) throws IOException, InterruptedException
    {
        String cmd = "sudo sh " + script_path + "/start_" + node_name + ".sh";
        System.out.println("\r\nAvvio istanza di tomcat richiamando lo script di start: \r\n" + cmd);
        ForkProcess(cmd);
        
         //Aspetta che Tomcat sia partito, quando cioè nel log catalina.out c'è scritto Tomcat server startup in ... ms
-        WaitFor_TomcatServerStartUp();       
+        WaitFor_TomcatServerStartUp(log_file_path);       
    }
    
    static void Stop_Instance(String script_path, String node_name) throws IOException, InterruptedException
@@ -641,10 +643,10 @@ public class Main {
         CopyRepo();
         
         //riavvia istanza nodo originale        
-        Start_Instance(last_jr_node_tomcat_script_path, last_jr_node_name);
+        Start_Instance(last_jr_node_tomcat_script_path, last_jr_node_name, last_jr_node_tomcat_instance_log_path);
                 
         //avvia nuovo nodo jackrabbit
-        Start_Instance(jr_node_tomcat_scripts_path, jr_node_name);
+        Start_Instance(jr_node_tomcat_scripts_path, jr_node_name, jr_node_tomcat_instance_log_path);
    }
    
     static void CreateBootstrapProperties()
@@ -1165,17 +1167,17 @@ public class Main {
         
     }    
         
-    static void WaitFor_TomcatServerStartUp() throws IOException
+    static void WaitFor_TomcatServerStartUp(String log_file_path) throws IOException
     {
         System.out.println("Aspetto che l'istanza di tomcat finisca di avviarsi");
         System.out.println("Quindi finisce di deployare la webapp di jackrabbit");
-        System.out.println("LOG: " + jr_node_tomcat_instance_log_path);
-        while(!isTomcatUp(connector_port))
+        System.out.println("LOG: " + log_file_path);
+        while(!isTomcatUp(connector_port, log_file_path))
         {
             //aspetto
         }
         //pulisco log catalina.out
-        CleanLog(jr_node_tomcat_instance_log_path);
+        CleanLog(log_file_path);
     }        
     
     static int ForkProcess(String cmd) throws IOException, InterruptedException
@@ -1229,7 +1231,7 @@ public class Main {
         return status;
     }
     
-static boolean isTomcatUp(int port) throws IOException 
+static boolean isTomcatUp(int port, String log_file_path) throws IOException 
 {
     /*
     BufferedReader br = null;
@@ -1256,7 +1258,7 @@ static boolean isTomcatUp(int port) throws IOException
     br.close();
     */
     
-    File log = new File(jr_node_tomcat_instance_log_path);
+    File log = new File(log_file_path);
     String lastLine = LastLine(log);
     
     
@@ -1335,10 +1337,13 @@ static String LastLine(File file)
     }
 }
 
-static void CleanLog(String tomcat_log)
+static void CleanLog(String tomcat_log) throws IOException
 {
-    File toCanc = new File(tomcat_log);
-    toCanc.delete();
+    File toClean= new File(tomcat_log);
+    //sovrascrive file cancellando tutti i caratteri
+    FileWriter f2 = new FileWriter(toClean, false);
+    f2.write("");
+    f2.close();    
 }        
 
 static void Set_LastJR_Node_Variables()
@@ -1348,13 +1353,16 @@ static void Set_LastJR_Node_Variables()
     last_jr_node_tomcat_path = last_jr_node_root_path + "/tomcat";
     last_jr_node_tomcat_script_path = last_jr_node_tomcat_path + "/scripts";
     last_jr_node_repo_path = last_jr_node_root_path + "/repo";
+    last_jr_node_tomcat_instance_path = last_jr_node_tomcat_path + "/instance";
+    last_jr_node_tomcat_instance_log_path = last_jr_node_tomcat_instance_path + "/logs/catalina.out";
     
+            /*
     System.out.println(last_jr_node_name);
     System.out.println(last_jr_node_root_path);
     System.out.println(last_jr_node_tomcat_path);
     System.out.println(last_jr_node_tomcat_script_path);
     System.out.println(last_jr_node_repo_path);
-    
+    */
 }        
 
 static void UpdateJournalPM() throws SQLException
