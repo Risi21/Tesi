@@ -11,6 +11,10 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 
 /**
  *
@@ -18,12 +22,16 @@ import java.io.InputStreamReader;
  */
 public class Main {
     
+    static String db_user = "";
+    static String db_pass = "";
+    static String mysql_url = "localhost:3306";
+    static String tomcat = "tomcat-8.0.12.tar.gz";
+    
     public static void main(String[] args) throws Exception 
     {       
         CheckArguments(args);
         
-        //installa java 1.8 oracle via repository
-        Setup_Java();
+        //N.B: java deve già essere installato, quindi chiamare prima lo script sh installer java
         
         //estrae tar.gz, sposta cartella tomcat in /usr/share, aggiunge 2 export al file .bashrc
         Setup_Tomcat();
@@ -38,41 +46,36 @@ public class Main {
         for(int i = 0; i < args.length; i++)
         {
             //nome della nuova istanza di tomcat
-            if(args[i].equals("-reponame"))
+            if(args[i].equals("-mysql_url"))
             {
-           
+                mysql_url = args[++i];
+            }
+            
+            if(args[i].equals("-dbuser"))
+            {
+                db_user = args[++i];
+                db_pass = args[++i];
             }
             if(args[i].equals("--help"))
             {
                 System.out.println(""
                         + "\r\nParametri disponibili:\r\n\r\n"
-                        + "-reponame <mysql db del repository jackrabbit>,\r\n");
+                        + "-dbuser <username> <password>, utente root di mysql\r\n"
+                        + "-mysql_url <url>, url di mysql, default localhost:3306");
                 System.exit(0);
             }              
         }
-    }    
-    
-    static void Setup_Java() throws IOException, InterruptedException
-    {        
-        String cmd = "sudo add-apt-repository ppa:webupd8team/java";
-        System.out.println("Aggiungo repository" + cmd);
-        ForkProcess(cmd);
-        
-        cmd = "sudo apt-get -y update";
-        System.out.println("Update repository" + cmd);
-        ForkProcess(cmd);
-        
-        cmd = "sudo apt-get -y install oracle-java8-installer";
-        System.out.println("Installa java 1.8 oracle" + cmd);
-        ForkProcess(cmd);                
-    }        
+    }          
 
     static void Setup_Tomcat() throws IOException, InterruptedException
     {
         //N.B. il file tomcat.tar.gz DEVE essere nella stessa cartella del jar
         
+        String current_exe_path = System.getProperty("user.dir");        
+        System.out.println("path corrente: " + current_exe_path);
+        
         //estrae cartella tomcat in /usr/share
-        String cmd = "sudo tar -zxvf " + current_exe_path + "/tomcat.tar.gz -C /usr/share/";
+        String cmd = "sudo tar -zxvf " + current_exe_path + "/" + tomcat + " -C /usr/share/";
         System.out.println("Estraggo tomcat in /usr/share/ " + cmd);
         ForkProcess(cmd);
         
@@ -86,8 +89,12 @@ public class Main {
         
     }
     
-    static void Append_Bashrc()
+    static void Append_Bashrc() throws IOException
     {
+        String home = System.getProperty("user.home");
+        String bashrc = home + "/.bashrc";
+        System.out.println("file bashrc: " + bashrc);
+        
         File toAppend= new File(bashrc);
         //aggiunge 2 riche di export
         FileWriter f = new FileWriter(toAppend, true);
@@ -96,10 +103,40 @@ public class Main {
         f.close();            
     }    
     
-    static void Setup_JRSAAS()
+    static void Setup_JRSAAS() throws IOException, InterruptedException, SQLException
     {
+        //crea cartella /srv/cluster
+        String cmd = "sudo mkdir /srv/cluster";
+        System.out.println("Creao cartelle jrsaas " + cmd);
+        ForkProcess(cmd);
         
+        Create_MySqlDb();
     }  
+    
+    static void Create_MySqlDb() throws SQLException
+    {
+        System.out.println("\r\nCreo db mysql JRSAAS_CONFIG nel mysql server " + mysql_url + "\r\n");       
+        Connection cn = DriverManager.getConnection("jdbc:mysql://" + mysql_url + "/?user=" + db_user + "&password=" + db_pass + "");
+        Statement s = cn.createStatement();        
+        int Result = s.executeUpdate("CREATE DATABASE JRSAAS_CONFIG;");
+        
+        Result = s.executeUpdate("CREATE TABLE JRSAAS_CONFIG.INSTANCE(\n" +
+"\n" +
+"Nome Varchar(30) not null,\n" +
+"Connector_Port integer not null,\n" +
+"Shutdown_Port integer not null,\n" +
+"Ajp_Port integer not null,\n" +
+"primary key (Nome)    \n" +
+"    \n" +
+"    );");
+        
+        /*//crea utente
+        System.out.println("\r\nCreo utente mysql " + db_user + " con permessi di lettura e scrittura solo per il db " + repo_name + "\r\n");       
+        Result = s.executeUpdate("grant usage on *.* to " + db_user + "@localhost identified by '" + db_password + "';");
+        Result = s.executeUpdate("grant all privileges on " + repo_name + ".* to " + db_user + "@localhost;");
+        */
+        cn.close();        
+    }    
     
     static int ForkProcess(String cmd) throws IOException, InterruptedException
     {
