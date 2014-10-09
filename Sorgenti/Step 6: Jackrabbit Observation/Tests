@@ -1,0 +1,39 @@
+1) nel journal vengono scritti solo gli eventi che vengono effettivamente salvati nel database, es:
+
+aggiungo nodo, aggiungo proprietà, rimuovo proprietà, session.save()
+
+Si vede solo l'evento aggiunta del nodo 
+
+------------------------------------------------------------------------
+
+2) Session.move(node to move, path dest)
+
+Il path dest comprende anche il nome nuovo del nodo, es
+
+move(/n1, /n3)
+
+lascia n1 in / ma lo rinomina in n3
+
+Output reverse:
+
+Event: NODE MOVED '/n3[7]'
+ Event: NODE ADDED '/n3[7]'
+ Event: NODE REMOVED '/n1'
+
+Domanda: Come faccio a capire qual è il nodo sorgente?
+
+Prima move e poi node.remove: fa prima il remove e poi il move
+
+ Event: NODE REMOVED '/n13'
+ Event: NODE MOVED '/n3/n12'
+ Event: NODE ADDED '/n3/n12'
+ Event: NODE REMOVED '/n12'
+
+Prima il remove e poi il move: output come sopra
+
+Garda info nel map dell'evento
+
+
+
+
+--------------------------------
