@@ -1,0 +1,17 @@
+Ogni Cluster Clone ha la tabella Sync:
+
+Create Table Sync(
+
+Cluster varchar(30) not null,
+Data date not null,
+primary key (Cluster, Data)
+
+);
+
+Quando si clona il cluster, nel journal del cluster clone c'è la stessa data, quel valore quindi si mette nella tabella Sync.
+
+Ogni volta che si fa partire l'applicazione "sincronizza da journal", si fa uno skipToDate all'ultma data salvata nel database.
+
+Poi si rifanno tutti gli eventi nel cluster clone.
+
+Poi si aggiorna la tabella Sync.

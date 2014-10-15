@@ -1,0 +1,34 @@
+La tabella INSTANCE viene sostituita con 2 tabelle per identificare meglio il cluster e i nodi.
+
+1) Tabella CLUSTER
+Per ogni cluster mantiene il nome e le credenziali utente, sia per il repository che per il pm in mysql
+
+Create Table JRSAAS_CONFIG.CLUSTER(
+
+nome varchar(50) not null,
+user varchar(50) not null,
+userpwd varchar(50) not null,
+mysql_url varchar(50) not null,
+db_name varchar(50) not null,
+primary key (nome)
+
+);
+
+
+2) Tabella CLUSTER_NODE
+Per ogni nodo mantiene il nome, l'host (es localhost o www.xxx.com) e le 3 porte usate all'interno dell'host,
+e il riferimento al cluster
+
+Create Table JRSAAS_CONFIG.CLUSTER_NODE(
+
+nome varchar(50) not null,
+cluster varchar(50) not null,
+host varchar(50) not null,
+connector_Port integer not null,
+shutdown_Port integer not null,
+ajp_Port integer not null,
+
+primary key (nome),
+foreign key (cluster) references JRSAAS_CONFIG.CLUSTER(nome)
+
+);
