@@ -4,9 +4,9 @@
  * and open the template in the editor.
  */
 
-package com.luca.clusternfs;
+package com.luca.clusternfsaddnode;
 
-import static com.luca.clusternfs.Constants.*; //importa tutte le costanti
+import static com.luca.clusternfsaddnode.Constants.*;
 
 import java.io.*;
 import java.util.*; //per le liste e stringhe
@@ -36,13 +36,10 @@ public class Main {
 
     static String cluster_name = "";
     static String cluster_root_path = "";
-    //path backup del datastore e pm del cluster
-    static String cluster_backup_path = "";
-    //path datastore cluster nel file system
-    static String cluster_datastore_path = "";
     //nome mysqldb persistence manager
     static String cluster_pm_name = "";
-    //url mysql
+    static String cluster_backup_path = "";
+    static String cluster_datastore_path = "";
     static String cluster_mysql_url = "";
     
     //primo nodo jackrabbit che appartiene al cluster
@@ -60,20 +57,34 @@ public class Main {
     //log di tomcat catalina.out
     static String jr_node_tomcat_instance_log_path= "";
     static String jr_node_repo_path = "";
-
+    
+    static int last_jr_node_id = 1;
+    static String last_jr_node_name = "";
+    static int last_jr_node_revisionNumber = 0;
+    static String last_jr_node_root_path = "";
+    static String last_jr_node_tomcat_path = "";
+    static String last_jr_node_tomcat_script_path = "";
+    static String last_jr_node_repo_path = "";
+    static String last_jr_node_tomcat_instance_log_path = "";
+    static String last_jr_node_tomcat_instance_path = "";
     
      public static void main(String[] args) throws Exception 
     {
         //TODO: da controllare numeri di porta corretti e instance name (che non esista già e != da scripts, nel db mysql)
         CheckArguments(args);
-
-        //aggiunge alla tabella JRSAAS_CONFIG.CLUSTER le info del nuovo cluster che verrà creato
-        Insert_MySql_Row_Cluster();
         
-        //solo per localhost
-        CreateClusterFolders();
+        //legge dal database JRSAAS_CONFIG le info sul cluster, es:
+        //mysql url del pm, dbuser, ...
+        Read_Variables();
         
-        //solo per localhost
+        //trova ultimo id nodo jackrabbit, leggendo tabella NODE del pm
+        //poi aggiorna tabella NODE
+        FindJR_NodeName();
+                        
+        SetJR_NodeVariables();
+        
+        Set_LastJR_Node_Variables();
+        
         CreateJR_NodeFolders();       
         
         //Controlla che le 3 porte siano libere e non attualmente in uso
@@ -81,7 +92,7 @@ public class Main {
         
         //crea start_<instance_name>.sh e stop_<instance_name>.sh
         //dentro alla cartella scripts
-        CreateScripts();
+        CreateJR_NodeScripts();
         
         //copia jackrabit-webapp.war in webapps dell'istanza di tomcat appena creata
         //CopyWarFile();
@@ -89,16 +100,13 @@ public class Main {
         //esporta jackrabbit-webapp.war da dentro il jar nella cartella webapps di tomcat
         ExportWarFile();
         
-        //richiama lo script di start
-        Start_Instance();        
+        //richiama lo script di start per far deployare il .war di jackrabbit
+        Start_Instance(jr_node_tomcat_scripts_path, jr_node_name, jr_node_tomcat_instance_log_path);        
         
-       //crea persistence manager (pm) in mysql
-       //crea database mysql nuovo per questa istanza di tomcat e repository jackrabbit
-       //crea utente con permessi di lettura e scrittura solo per questo database
-       CreaMySqlPM();        
+        Stop_Instance(jr_node_tomcat_scripts_path, jr_node_name);
         
         //Inizio Creazione Repository (Cartelle Repository Workspaces e File repository.xml e bootstrap.properties)
-        CreateNewRepo();
+        AddNewJR_Node();
         
     }
     
@@ -107,16 +115,73 @@ public class Main {
         
         for(int i = 0; i < args.length; i++)
         {
-            //nome della nuova istanza di tomcat
+            //nome del cluster al quale si vuole aggiungere il nodo nuovo
             if(args[i].equals("-name"))
             {
                 cluster_name = args[++i];
                 cluster_pm_name = MYSQL_PM_PREFIX + cluster_name;
                 cluster_root_path = ROOT_CLUSTER_PATH + "/" + cluster_name;
                 cluster_backup_path = cluster_root_path + "/backup";
-                cluster_datastore_path = cluster_root_path + "/datastore";
-                
-                jr_node_name = cluster_name + "_1";
+                cluster_datastore_path = cluster_root_path + "/datastore";                
+            }
+            if(args[i].equals("-host"))
+            {            
+                jr_node_host = args[++i];
+            }              
+            if(args[i].equals("--help"))
+            {
+                System.out.println(""
+                        + "\r\nParametri disponibili:\r\n\r\n"
+                        + "-name <cluster name>,\r\n"
+                        + "-host <host url>, es. localhost, www.node1.com, dove viene salvato il nodo");                   
+                System.exit(0);
+            }              
+        }
+    }
+
+   static void Read_Variables() throws SQLException
+   {       
+       String query = "SELECT * FROM " + MYSQL_JRSAAS_CONFIG_DB + "." + MYSQL_TABLE_CLUSTER + " WHERE nome = '" + cluster_name + "';";
+        Connection cn = DriverManager.getConnection("jdbc:mysql://" + cluster_mysql_url + "/" + cluster_pm_name + "?user=" + ADMIN_JRSAAS + "&password=" + ADMIN_JRSAAS_PWD + "");
+        Statement s = cn.createStatement();
+        
+         //definisce nuovo Id e Nome per il nuovo nodo jackrabbit
+         ResultSet rs = s.executeQuery(query);         
+         rs.next();
+
+        db_user = rs.getString("user");
+        db_password = rs.getString("userpwd");
+        cluster_pm_name = rs.getString("db_name");
+        cluster_mysql_url = rs.getString("mysql_url");
+       
+        cn.close();       
+   }        
+   
+   static void FindJR_NodeName() throws SQLException
+   {
+       //trova ultimo id
+       String query = "SELECT ID FROM " + cluster_pm_name + ".NODE ORDER BY ID DESC;";
+        Connection cn = DriverManager.getConnection("jdbc:mysql://" + cluster_mysql_url + "/" + cluster_pm_name + "?user=" + db_user + "&password=" + db_password + "");
+        Statement s = cn.createStatement();
+        
+         //definisce nuovo Id e Nome per il nuovo nodo jackrabbit
+         ResultSet rs = s.executeQuery(query);         
+         rs.next();
+         last_jr_node_id = rs.getInt("ID");
+         jr_node_name = cluster_name + "_" + (last_jr_node_id + 1);
+        
+         //aggiorna tabella NODE
+         int Result = s.executeUpdate("INSERT INTO " + cluster_pm_name + ".NODE VALUES (" + (last_jr_node_id + 1) + ",\"" + jr_node_name + "\");");
+         
+          s.close();
+        cn.close();
+        
+        System.out.println("ultimo id: " + last_jr_node_id + ", nome nodo nuovo: " + jr_node_name);
+        
+   }   
+   
+   static void SetJR_NodeVariables()
+   {
                 jr_node_root_path = cluster_root_path + "/" + jr_node_name;
                 jr_node_tomcat_path = jr_node_root_path + "/tomcat";
                 jr_node_repo_path = jr_node_root_path + "/repo";
@@ -125,68 +190,8 @@ public class Main {
                 jr_node_tomcat_instance_log_path = jr_node_tomcat_instance_path + "/logs/catalina.out";
                 jr_node_tomcat_instance_webapp_path = jr_node_tomcat_instance_path + "/webapps";
                 jr_node_tomcat_instance_webapp_jackrabbit_path = jr_node_tomcat_instance_webapp_path + "/" + JACKRABBIT_WEBAPP_DIRNAME;
-            }
-            //nome della nuova istanza di tomcat
-            if(args[i].equals("-dbuser"))
-            {            
-                db_user = args[++i];
-                db_password = args[++i];
-            }
-            if(args[i].equals("-mysql"))
-            {            
-                cluster_mysql_url = args[++i];
-            }            
-            if(args[i].equals("-host"))
-            {            
-                jr_node_host = args[++i];
-            }            
-            if(args[i].equals("--help"))
-            {
-                System.out.println(""
-                        + "\r\nParametri disponibili:\r\n\r\n"
-                        + "-name <new tomcat instance name>,\r\n"
-                        + "-dbuser <username> <password>, utente per database mysql e repository jackrabbit\r\n"
-                        + "-mysql <mysql url:porta>, es localhost:3306, www.abc.com:3306\r\n"
-                        + "-host <host url>, es. localhost, www.node1.com");                
-                System.exit(0);
-            }              
-        }
-    }
-
-static void Insert_MySql_Row_Cluster() throws SQLException
-{
-       //inserisce nome istanza nel database JRSAAS mysql e le 3 porte configurate        
-        Connection cn = DriverManager.getConnection("jdbc:mysql://" + cluster_mysql_url + "/" + MYSQL_JRSAAS_CONFIG_DB + "?user=" + USER_JRSAAS + "&password=" + USER_JRSAAS_PWD + "");
-        Statement s = cn.createStatement();
-        String cmd = "INSERT INTO " + MYSQL_JRSAAS_CONFIG_DB + "." + MYSQL_TABLE_CLUSTER + " VALUES (" 
-                + "'" + cluster_name + "', "
-                + "'" + db_user + "', "
-                + "'" + db_password + "', "
-                + "'" + cluster_mysql_url + "', "
-                + "'" + cluster_pm_name + "');";
-        System.out.println("Aggiungo riga a CLUSTER:\r\n\r\n" + cmd);
-        int Result = s.executeUpdate(cmd);
-        cn.close();    
-}        
-   
-   static void CreateClusterFolders() throws IOException, InterruptedException
-   {
-       //creo cartella /srv/cluster/cluster_name
-        String cmd = "sudo mkdir " + cluster_root_path;
-        System.out.println("\r\nCreo la cartella root del cluster:\r\n" + cmd);
-        ForkProcess(cmd);
-        
-        //creo cartella /srv/cluster/cluster_name/backup
-        cmd = "sudo mkdir " + cluster_backup_path;
-        System.out.println("\r\nCreo la cartella backup del cluster:\r\n" + cmd);
-        ForkProcess(cmd);
-        
-        //creo cartella /srv/cluster/cluster_name/datastore
-        cmd = "sudo mkdir " + cluster_datastore_path;
-        System.out.println("\r\nCreo la cartella datastore del cluster:\r\n" + cmd);
-        ForkProcess(cmd);        
-        
-   } 
+       
+   }   
    
    static void CreateJR_NodeFolders() throws IOException, InterruptedException
    {
@@ -388,16 +393,11 @@ static void Insert_MySql_Row_Cluster() throws SQLException
     public static int FindFreePort(int min_port, int max_port, String port_column_name) throws IOException, SQLException 
     {        
         ServerSocket output;
-        //NB
-        //VALIDO SOLO PER LOCALHOST
-        //SE VOGLIO CREARE UN CLUSTER DA REMOTO NON DEVO CONTROLLARE CHE LA PORTA
-        //SIA LIBERA IN LOCALHOST
         for (int port = min_port; port <= max_port; port++) 
-        {/*
+        {
             try 
             {
-            */
-                //output = new ServerSocket(port);
+                output = new ServerSocket(port);
                 //controlla se la porta, oltre ad essere libera attualmente nel server,
                 //non appartiene ad un'istanza di tomcat che attualmente è spenta
                 //(quindi le sue porte risultano libere per il S.O.)
@@ -407,15 +407,12 @@ static void Insert_MySql_Row_Cluster() throws SQLException
                     //controlla la porta successiva in senso numerico (++)
                     continue;
                 }    
-                //return output.getLocalPort();
-                return port;
-            /*
+                return output.getLocalPort();
             } 
             catch (IOException ex) 
             {            
                 continue; // try next port
             }
-                */
     }
 
     // if the program gets here, no port in the range was found
@@ -450,7 +447,7 @@ static void Insert_MySql_Row_Cluster() throws SQLException
         return false; //used = true
    }         
     
-   static void CreateScripts() throws IOException, InterruptedException
+   static void CreateJR_NodeScripts() throws IOException, InterruptedException
    {
         File theDir = new File(jr_node_tomcat_scripts_path);
         // if the directory does not exist, create it
@@ -633,24 +630,24 @@ static void Insert_MySql_Row_Cluster() throws SQLException
         }       
    }
    
-   static void Start_Instance() throws IOException, InterruptedException
+   static void Start_Instance(String script_path, String node_name, String log_file_path) throws IOException, InterruptedException
    {
-       String cmd = "sudo sh " + jr_node_tomcat_scripts_path + "/start_" + jr_node_name + ".sh";
+       String cmd = "sudo sh " + script_path + "/start_" + node_name + ".sh";
        System.out.println("\r\nAvvio istanza di tomcat richiamando lo script di start: \r\n" + cmd);
        ForkProcess(cmd);
        
         //Aspetta che Tomcat sia partito, quando cioè nel log catalina.out c'è scritto Tomcat server startup in ... ms
-        WaitFor_TomcatServerStartUp();       
+        WaitFor_TomcatServerStartUp(log_file_path);       
    }
    
-   static void Stop_Instance() throws IOException, InterruptedException
+   static void Stop_Instance(String script_path, String node_name) throws IOException, InterruptedException
    {
-       String cmd = "sudo sh " + jr_node_tomcat_scripts_path + "/stop_" + jr_node_name + ".sh";
+       String cmd = "sudo sh " + script_path + "/stop_" + node_name + ".sh";
        System.out.println("\r\nFermo istanza di tomcat richiamando lo script di stop: \r\n" + cmd);
        ForkProcess(cmd);
-   }   
+   }
 
-   static void CreateNewRepo() throws SQLException, IOException, InterruptedException, RepositoryException 
+   static void AddNewJR_Node() throws SQLException, IOException, InterruptedException, RepositoryException 
    {              
         //crea file bootstrap.properties dentro alla cartella del repository
         CreateBootstrapProperties();
@@ -662,55 +659,21 @@ static void Insert_MySql_Row_Cluster() throws SQLException
         //setta il percorso giusto al file bootstrap.properties
         EditWebXml();   
         
-        //riavvia tomcat per creare il repository jackrabbit
-        //(creazione cartelle e file + popolazione database mysql)
-        //dopo che sono stati modificati i file di configurazione
-        //(repository.xml, workspace.xml)
-        System.out.println("\r\nRiavvio server tomcat per creare tutti i file"
-                + "del nuovo repository e per farlo configurare per il suo primo utilizzo"
-                + "con mysql");         
-        Restart_Tomcat();        
+        //ferma nodo Jackrabbit con id + alto
+        Stop_Instance(last_jr_node_tomcat_script_path, last_jr_node_name);
         
-        //Aspetta che la cartella e i file del repository vengano creati
-        //nel path prefissato
-        System.out.println("\r\nAspetto che il repository venga completamente creato, controllando l'esistenza di tutte le cartelle e i file");                 
-        System.out.println("\r\nAspetto quindi che l'istanza di tomcat sia partita");      
+        //aggiorna tabella journal del pm  
+        UpdateJournalPM();
+        
+        //copia cartella repository, workspaces e file revision dalla cartella repo dell'ultimo nodo jackrabbit        
+        CopyRepo();
+        
+        //riavvia istanza nodo originale        
+        Start_Instance(last_jr_node_tomcat_script_path, last_jr_node_name, last_jr_node_tomcat_instance_log_path);
                 
-        Stop_Instance();
-        
-        //WaitFor_LockDelete();
-        
-        //1) cambia password admin
-        //2) disabilita anonymous     
-        ChangeRepoUsers();     
-        
-        //avvia tomcat con le modifiche apportate agli utenti
-        Start_Instance();
+        //avvia nuovo nodo jackrabbit
+        Start_Instance(jr_node_tomcat_scripts_path, jr_node_name, jr_node_tomcat_instance_log_path);
    }
-   
-   static void CreaMySqlPM() throws SQLException
-   {
-        System.out.println("\r\nCreo db mysql " + cluster_pm_name + " nel mysql server " + cluster_mysql_url + "\r\n");       
-        Connection cn = DriverManager.getConnection("jdbc:mysql://" + cluster_mysql_url + "/?user=" + ADMIN_JRSAAS + "&password=" + ADMIN_JRSAAS_PWD + "");
-        Statement s = cn.createStatement();        
-        int Result = s.executeUpdate("CREATE DATABASE " + cluster_pm_name + ";");
-        
-        System.out.println("\r\nCreo utente mysql " + db_user + " con permessi di lettura e scrittura solo per il db " + cluster_pm_name + "\r\n");       
-        Result = s.executeUpdate("grant usage on *.* to " + db_user + "@localhost identified by '" + db_password + "';");
-        Result = s.executeUpdate("grant all privileges on " + cluster_pm_name + ".* to " + db_user + "@localhost;");
-        
-        //creo tabella NODE, inserendo il primo nodo di jackrabbit:
-        Result = s.executeUpdate("CREATE TABLE " + cluster_pm_name + ".NODE(\n" +
-        "Id integer not null,\n" +
-        "Nome varchar(50) not null,\n" +
-        "primary key (Id)    \n" +
-        ");");
-        
-        //inserisce primo record: id = 1 e nome del primo nodo jackrabbit
-        Result = s.executeUpdate("INSERT INTO " + cluster_pm_name + ".NODE VALUES(1,'" + jr_node_name + "');");
-        
-         cn.close();
-   }      
    
     static void CreateBootstrapProperties()
     {
@@ -1229,24 +1192,18 @@ static void Insert_MySql_Row_Cluster() throws SQLException
         repository.shutdown();
         
     }    
-    
-    static void Restart_Tomcat() throws IOException, InterruptedException
-    {
-        Stop_Instance();
-        Start_Instance();
-    }    
-    
-    static void WaitFor_TomcatServerStartUp() throws IOException
+        
+    static void WaitFor_TomcatServerStartUp(String log_file_path) throws IOException
     {
         System.out.println("Aspetto che l'istanza di tomcat finisca di avviarsi");
         System.out.println("Quindi finisce di deployare la webapp di jackrabbit");
-        System.out.println("LOG: " + jr_node_tomcat_instance_log_path);
-        while(!isTomcatUp(connector_port))
+        System.out.println("LOG: " + log_file_path);
+        while(!isTomcatUp(connector_port, log_file_path))
         {
             //aspetto
         }
         //pulisco log catalina.out
-        CleanLog(jr_node_tomcat_instance_log_path);
+        CleanLog(log_file_path);
     }        
     
     static int ForkProcess(String cmd) throws IOException, InterruptedException
@@ -1258,7 +1215,7 @@ static void Insert_MySql_Row_Cluster() throws SQLException
         int status = p.waitFor();
         
         //DEBUG
-        /*
+        
         System.out.println("ERRORI:");
             String line = "";
         
@@ -1278,8 +1235,8 @@ static void Insert_MySql_Row_Cluster() throws SQLException
                  System.out.println(line);
             }
             in.close();   
-        */
         
+        /*
         if(status == 0)
         {
             //terminato normalmente                                         
@@ -1296,42 +1253,15 @@ static void Insert_MySql_Row_Cluster() throws SQLException
             }
             in2.close();
         }
-        
+        */
         return status;
     }
     
-static boolean isTomcatUp(int port) throws IOException 
+static boolean isTomcatUp(int port, String log_file_path) throws IOException 
 {
-    /*
-    BufferedReader br = null;
-        String lastLine = "";
     
-    try 
-    {
-
-        String sCurrentLine;
-        
-        br = new BufferedReader(new FileReader(jr_node_tomcat_instance_log_path));
-        //arrivo a leggere l'ultima riga
-        while ((sCurrentLine = br.readLine()) != null) 
-        {
-            lastLine = sCurrentLine;
-        }
-
-    } 
-    catch (IOException e) 
-    {
-        e.printStackTrace();
-    }
-    
-    br.close();
-    */
-    
-    File log = new File(jr_node_tomcat_instance_log_path);
+    File log = new File(log_file_path);
     String lastLine = LastLine(log);
-    
-    
-    //System.out.println(lastLine);
     
     String toCheck = "org.apache.catalina.startup.Catalina.start Server startup in";
     //se l'ultima riga è uguale allo startup del server...   
@@ -1414,6 +1344,54 @@ static void CleanLog(String tomcat_log) throws IOException
     f2.write("");
     f2.close();    
 }        
+
+static void Set_LastJR_Node_Variables()
+{
+    last_jr_node_name = cluster_name + "_" + last_jr_node_id;
+    last_jr_node_root_path = cluster_root_path + "/" + last_jr_node_name;
+    last_jr_node_tomcat_path = last_jr_node_root_path + "/tomcat";
+    last_jr_node_tomcat_script_path = last_jr_node_tomcat_path + "/scripts";
+    last_jr_node_repo_path = last_jr_node_root_path + "/repo";
+    last_jr_node_tomcat_instance_path = last_jr_node_tomcat_path + "/instance";
+    last_jr_node_tomcat_instance_log_path = last_jr_node_tomcat_instance_path + "/logs/catalina.out";
     
+}        
+
+static void UpdateJournalPM() throws SQLException
+{    
+        String query = "select REVISION_ID from " + cluster_pm_name + ".JOURNAL_LOCAL_REVISIONS where journal_id = \"" + last_jr_node_name + "\";";
+        System.out.println("\r\n\r\nUpdate Journal: " + query);
+        Connection cn = DriverManager.getConnection("jdbc:mysql://" + cluster_mysql_url + "/" + cluster_pm_name + "?user=" + db_user + "&password=" + db_password + "");
+        Statement s = cn.createStatement();
+        
+         //definisce nuovo Id e Nome per il nuovo nodo jackrabbit
+         ResultSet rs = s.executeQuery(query);         
+         rs.next();
+         last_jr_node_revisionNumber = rs.getInt("REVISION_ID");
+        
+         //inserisce nuovo nodo nella tabella journal, con revision_id = a quello dell'ultimo nodo
+         int Result = s.executeUpdate("INSERT INTO " + cluster_pm_name + ".JOURNAL_LOCAL_REVISIONS VALUES (\"" + jr_node_name + "\"," + last_jr_node_revisionNumber + ");");
+         
+          s.close();
+        cn.close();    
+}
+
+static void CopyRepo() throws IOException, InterruptedException
+{
+        //creo cartella /srv/cluster/cluster_name/jr_node_name
+        String cmd = "sudo cp -r " + last_jr_node_repo_path + "/repository " + jr_node_repo_path;
+        System.out.println("\r\nCopia cartella repository dall'ultimo al nuovo nodo:\r\n" + cmd);
+        ForkProcess(cmd);       
+        
+        cmd = "sudo cp -r " + last_jr_node_repo_path + "/workspaces " + jr_node_repo_path;
+        System.out.println("\r\nCopia cartella workspaces dall'ultimo al nuovo nodo:\r\n" + cmd);
+        ForkProcess(cmd);       
+        
+        cmd = "sudo cp " + last_jr_node_repo_path + "/revision " + jr_node_repo_path;
+        System.out.println("\r\nCopia file revision dall'ultimo al nuovo nodo:\r\n" + cmd);
+        ForkProcess(cmd);       
+                
+}        
+
 }
 
