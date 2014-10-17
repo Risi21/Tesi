@@ -37,78 +37,25 @@ public class Main {
     
     public static void main(String[] args) throws Exception 
     {
-        //try 
-        //{
-
-            String url = "http://localhost:11000/jackrabbit/server/";
+            //repo (cluster) che si vuole sincronizzare
+            String url = "http://localhost:11003/jackrabbit/server/";
             String workspace = "default";
-
-           // DavexClient Client = new DavexClient(url);
-            //Repository repo = Client.getRepository();
-            Repository repo = JcrUtils.getRepository(url);
-            Credentials sc = new SimpleCredentials("usc1","psc1".toCharArray());
-            Session s = repo.login(sc,workspace);
-
-            // System.out.println("REPOSITORY CAPACITIES:");
-            // System.out.println(" " + Repository.OPTION_OBSERVATION_SUPPORTED + " = " + repo.getDescriptorValue(Repository.OPTION_OBSERVATION_SUPPORTED).getBoolean());
-            // System.out.println(" " + Repository.OPTION_JOURNALED_OBSERVATION_SUPPORTED + " = " + repo.getDescriptorValue(Repository.OPTION_JOURNALED_OBSERVATION_SUPPORTED).getBoolean() + "\n");
-
-            ObservationManager omgr = s.getWorkspace().getObservationManager();
-
-            // ----- READ THE EVENT JOURNAL -----------------------------------
-
-            System.out.println("\nJournal content:");
-
-            //EventJournal j = omgr.getEventJournal();
-            EventJournal j = omgr.getEventJournal(Event.NODE_ADDED | Event.PROPERTY_ADDED | Event.NODE_REMOVED | Event.NODE_MOVED | Event.PROPERTY_REMOVED | Event.PROPERTY_CHANGED | Event.PERSIST, "/", true, null, null);
-
-            if (j == null) 
-            {
-                System.out.println("Observation is not supported by your repository");
-                return;
-            }
-
-            try 
-            {                
-                Event e = j.nextEvent();
-                while (true) 
-                {
-                    System.out.println(" - Data: " + e.getDate() + "\r\n - Id: " + e.getIdentifier() + "\r\n - Path: " + e.getPath() + "\r\n - Type: " + getEventTypeName(e.getType()) + "\r\n - UserData " + e.getUserData() + "\r\n - UserID: " + e.getUserID() + "\r\n");
-                    e = j.nextEvent();
-                }
-            } 
-            catch (NoSuchElementException ex) 
-            {
-                System.out.println(" No more events\n");
-            }
+            String username = "uscc2";
+            String password = "pscc2";
+            int event_filter = Event.NODE_ADDED | Event.PROPERTY_ADDED | Event.NODE_REMOVED | Event.NODE_MOVED | Event.PROPERTY_REMOVED | Event.PROPERTY_CHANGED | Event.PERSIST;
+            
+            //legge journal del repo (cluster) identificato dall'url
+            EventJournal ej = Read_Journal(url, workspace, username, password, event_filter);            
+            
+            Stack<Event> events = Reverse_Events(ej);
+            
+            String url2 = "http://localhost:11004/jackrabbit/server/";
+            String workspace2 = "default";
+            String username2 = "uscc2c";
+            String password2 = "pscc2c";            
+            Redo_Events(events,url2, workspace2, username2, password2);
 }
     
-
-
-    static void InsertImage(Node hello, int i) throws RepositoryException, FileNotFoundException
-    {
-            //stream all'immagine
-            String filePath = "/home/luca/Scrivania/b.jpg";
-            InputStream fileStream = new FileInputStream(filePath); 
-        
-//nodi necessari per l'inserimento dell'immagine
-            Node img = hello.addNode("img"+i,"nt:file"); 
-            Node bin = img.addNode("jcr:content","nt:resource"); 
-    // First check the type of the file to add
-                        MimeTable mt = MimeTable.getDefaultTable();
-                        String mimeType = mt.getContentTypeFor(filePath);
-                        if (mimeType == null)
-                        {
-                                mimeType = "application/octet-stream";
-                        }
-                        
-               // set the mandatory properties
-                        bin.setProperty("jcr:data", fileStream);
-                        bin.setProperty("jcr:lastModified", Calendar.getInstance());
-                        bin.setProperty("jcr:mimeType", mimeType); 
-
-    }        
-
 static String getEventTypeName(int type)
 { 
     switch (type) 
@@ -123,6 +70,229 @@ static String getEventTypeName(int type)
         default: return "UNKNOWN";
     }
 }    
+
+static EventJournal Read_Journal(String repo_url, String workspace, String username, String password, int event_filter) throws RepositoryException
+{
+            Repository repo = JcrUtils.getRepository(repo_url);
+            Credentials sc = new SimpleCredentials(username,password.toCharArray());
+            Session s = repo.login(sc,workspace);
+
+            ObservationManager omgr = s.getWorkspace().getObservationManager();           
+            
+            // ----- READ THE EVENT JOURNAL -----------------------------------
+            return omgr.getEventJournal(event_filter, "/", true, null, null);
+
+}
+
+static Stack<Event> Reverse_Events(EventJournal ej)
+{
+    //fare lo skipTo alla data precedente a quella da cui si vuole partire per leggere tutti gli eventi
+    long last = 1413472594690L;
+    ej.skipTo(last);    
     
+    Stack<Event> output = new Stack<Event>();
+    
+        try 
+        {                
+            //se non ce ne sono altri, va nel catch
+            output.push(ej.nextEvent());                
+            while (true) 
+            {
+                output.push(ej.nextEvent());
+            }
+        } 
+        catch (NoSuchElementException ex) 
+        {
+            //fine eventi
+        }    
+    
+    return output;
+}              
+
+static void Redo_Events(Stack<Event> events, String repo_url, String workspace, String username, String password) throws RepositoryException
+{
+    //DEBUG
+    Print_Events(events);
+    
+    //faccio il login nel repo che deve rifare gli eventi per essere sincronizzato
+    Repository repo = JcrUtils.getRepository(repo_url);
+    Credentials sc = new SimpleCredentials(username,password.toCharArray());
+    Session s = repo.login(sc,workspace);
+    
+    try
+    {
+        Event e = events.pop();
+        while(true)
+        {
+            switch(e.getType())
+            {
+                case Event.NODE_ADDED:
+                    {
+                        //aggiungo nodo
+                        Add_Node(s,e);
+                        break;
+                    }
+                case Event.NODE_REMOVED:
+                    {
+                        Remove_Node(s, e);
+                        break;
+                    }
+                case Event.NODE_MOVED:
+                    {
+                        Move_Node(s, e);                                                
+                        break;
+                    }          
+                
+                case Event.PROPERTY_ADDED:
+                    {
+                        Add_Property(s, e);
+                        break;
+                    }
+                case Event.PROPERTY_CHANGED:
+                    {
+                        Change_Property(s, e);
+                        break;
+                    }
+                case Event.PROPERTY_REMOVED:
+                    {
+                        Remove_Property(s, e);
+                        break;
+                    }
+                
+                case Event.PERSIST:
+                    {
+                        //inizia un'altra serie di eventi, quindi faccio il save per salvare gli eventi già sincronizzati:
+                        s.save();
+                        break;
+                    }
+                default:
+                    {
+                        //non dovrebbe mai andare qui
+                        System.out.println("ERROR: default generated in switch type_event");
+                        break;
+                    }
+            }    
+            if(e.getType() == Event.NODE_MOVED)
+            {
+                                                
+            }              
+            System.out.println("\r\n");
+            e = events.pop();
+        }        
+    }    
+    catch(java.util.EmptyStackException e)
+    {
+        System.out.println(" Stack finito: " + e.getMessage());
+        System.out.println("Chiamo session.save()");
+        s.save();
+    }
+    
+}        
+
+static void Print_Events(Stack<Event> events)
+{
+    try 
+    {
+        Event e = events.pop();
+        while(true)
+        {
+            System.out.println(" - Data: " + e.getDate() + "\r\n - Id: " + e.getIdentifier() + "\r\n - Path: " + e.getPath() + "\r\n - Type: " + getEventTypeName(e.getType()) + "\r\n - UserData " + e.getUserData() + "\r\n - UserID: " + e.getUserID() + "\r\n");            
+            //controllo se l'evento era NODE MOVED, in questo caso devi distinguere se è stato generato
+            //da Session / Workspace move() o Node.orderBefore()
+            if(e.getType() == Event.NODE_MOVED)
+            {
+                //stampo informazioni aggiuntive:                
+                Map info = e.getInfo();
+                //controllo se è stato generato da Node.orderBefore o no
+                //in ogni caso i 2 parametri letti sono gli stessi parametri di input che hanno causato l'evento
+                try
+                {
+                    String srcChildRelPath = info.get("srcChildRelPath").toString();
+                    String destChildRelPath = info.get("destChildRelPath").toString();
+                    System.out.println("--srcChildRelPath: " + srcChildRelPath);
+                    System.out.println("--destChildRelPath: " + destChildRelPath);
+                    //chiami nide.orderBefore nella copia con questi 2 parametri
+                }
+                catch(Exception ex) //session / workspace move
+                {
+                    String srcAbsPath = info.get("srcAbsPath").toString();
+                    String destAbsPath = info.get("destAbsPath").toString();                    
+                    System.out.println("--srcAbsPath: " + srcAbsPath);
+                    System.out.println("--destAbsPath: " + destAbsPath);         
+                    //chiami session move con questi 2 parametri nel repo copia
+                }                                                
+            }              
+            System.out.println("\r\n");
+            e = events.pop();
+        }           
+    }
+    catch (java.util.NoSuchElementException ex) 
+    {
+        System.out.println("\nFine eventi Journal");
+    }
+    catch (javax.jcr.RepositoryException e) 
+    {
+        System.out.println(" An error occured: " + e.getMessage());
+    }
+    catch(java.util.EmptyStackException e)
+    {
+        System.out.println(" Stack finito: " + e.getMessage());
+    }    
+    
+}
+
+static void Add_Node(Session s, Event e) throws RepositoryException
+{
+    //parametri: absolute_path, node_type, session
+        //Node added = JcrUtils.getOrCreateByPath(e.getPath(), null, s);
+    //DA FARE CON EXPORT IMPORT
+}
+
+static void Remove_Node(Session s, Event e) throws RepositoryException
+{
+    //in questo caso fa la get, non la create:
+    s.removeItem(e.getPath());
+}
+//TODONT
+static void Move_Node(Session s, Event e) throws RepositoryException
+{
+        //stampo informazioni aggiuntive:                
+        Map info = e.getInfo();
+        //controllo se è stato generato da Node.orderBefore o no
+        //in ogni caso i 2 parametri letti sono gli stessi parametri di input che hanno causato l'evento
+        try
+        {
+            String srcChildRelPath = info.get("srcChildRelPath").toString();
+            String destChildRelPath = info.get("destChildRelPath").toString();
+            System.out.println("--srcChildRelPath: " + srcChildRelPath);
+            System.out.println("--destChildRelPath: " + destChildRelPath);
+            //chiami nide.orderBefore nella copia con questi 2 parametri
+        }
+        catch(Exception ex) //session / workspace move
+        {
+            String srcAbsPath = info.get("srcAbsPath").toString();
+            String destAbsPath = info.get("destAbsPath").toString();                    
+            System.out.println("--srcAbsPath: " + srcAbsPath);
+            System.out.println("--destAbsPath: " + destAbsPath);         
+            //chiami session move con questi 2 parametri nel repo copia
+        }        
+}
+
+
+static void Add_Property(Session s, Event e)
+{
+       
+}
+
+static void Change_Property(Session s, Event e)
+{
+        
+}
+
+static void Remove_Property(Session s, Event e)
+{
+        
+}
+
 }
 

@@ -6,34 +6,41 @@
 
 package com.luca.journal;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.*;
 import javax.jcr.Credentials;
 import javax.jcr.Node;
 import javax.jcr.Property;
 import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
-import javax.jcr.Workspace;
 import javax.jcr.SimpleCredentials;
-import javax.jcr.version.*;
-import java.util.*;
-import javax.jcr.observation.ObservationManager;
-import javax.jcr.observation.EventJournal;
+import javax.jcr.Workspace;
+import javax.jcr.ImportUUIDBehavior;
 import javax.jcr.observation.Event;
 import javax.jcr.observation.EventIterator;
+import javax.jcr.observation.EventJournal;
 import javax.jcr.observation.EventListener;
 import javax.jcr.observation.EventListenerIterator;
 
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.InputStream;
+import javax.jcr.observation.ObservationManager;
+import javax.jcr.version.*;
 import org.apache.jackrabbit.commons.JcrUtils;
 import sun.net.www.MimeTable;
+
 
 /**
  *
  * @author luca
  */
 public class Main {
+    
+    static Session s_old = null;
     
     public static void main(String[] args) throws Exception 
     {
@@ -75,9 +82,9 @@ static EventJournal Read_Journal(String repo_url, String workspace, String usern
 {
             Repository repo = JcrUtils.getRepository(repo_url);
             Credentials sc = new SimpleCredentials(username,password.toCharArray());
-            Session s = repo.login(sc,workspace);
+            s_old = repo.login(sc,workspace);
 
-            ObservationManager omgr = s.getWorkspace().getObservationManager();           
+            ObservationManager omgr = s_old.getWorkspace().getObservationManager();           
             
             // ----- READ THE EVENT JOURNAL -----------------------------------
             return omgr.getEventJournal(event_filter, "/", true, null, null);
@@ -109,7 +116,7 @@ static Stack<Event> Reverse_Events(EventJournal ej)
     return output;
 }              
 
-static void Redo_Events(Stack<Event> events, String repo_url, String workspace, String username, String password) throws RepositoryException
+static void Redo_Events(Stack<Event> events, String repo_url, String workspace, String username, String password) throws RepositoryException, IOException
 {
     //DEBUG
     Print_Events(events);
@@ -241,11 +248,33 @@ static void Print_Events(Stack<Event> events)
     
 }
 
-static void Add_Node(Session s, Event e) throws RepositoryException
+static void Add_Node(Session s, Event e) throws RepositoryException, IOException
 {
     //parametri: absolute_path, node_type, session
-        //Node added = JcrUtils.getOrCreateByPath(e.getPath(), null, s);
-    //DA FARE CON EXPORT IMPORT
+
+    //controllo prima che il nodo da importare non sia già presente nel repo nuovo
+    /*
+    potrebbe capitare che nello stesso set di eventi, il vecchio repo abbia aggiunto sia il nodo padre 
+    che il nodo figlio, quindi quando faccio l'import ricorsivo del padre ho anche il figlio
+    */
+    if(s.nodeExists(e.getPath()))
+    {
+        //se il nodo esiste già non faccio niente
+        return;
+    }
+    
+    //prendo nodo padre, al quale farò poi l'import:
+    String adding_node_path = e.getPath();
+    String parent_node_path = GetParentNodePath(adding_node_path); //prende il path fino all'ultima sbarra / (senza la sbarra, es /home/luca ritorna /home)
+    Node parent_node = s.getNode(parent_node_path);    
+    //faccio l'export sempre ricorsivo
+    boolean export_recursively = true;
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    //prendo nodo da esposrtare nella sessione del cluster vecchio:
+    Node to_export = s_old.getNode(e.getPath());
+    EsportaSource(to_export, baos, export_recursively);
+    ImportaDest(parent_node, baos.toByteArray(), s);    
+    
 }
 
 static void Remove_Node(Session s, Event e) throws RepositoryException
@@ -264,16 +293,16 @@ static void Move_Node(Session s, Event e) throws RepositoryException
         {
             String srcChildRelPath = info.get("srcChildRelPath").toString();
             String destChildRelPath = info.get("destChildRelPath").toString();
-            System.out.println("--srcChildRelPath: " + srcChildRelPath);
-            System.out.println("--destChildRelPath: " + destChildRelPath);
-            //chiami nide.orderBefore nella copia con questi 2 parametri
+            //richiamo il metodo orderBefore con i 2 parametri letti:
+            Node to_order = s.getNode(e.getPath());
+            to_order.orderBefore(srcChildRelPath, destChildRelPath);
         }
-        catch(Exception ex) //session / workspace move
+        catch(Exception ex) //session or workspace move
         {
             String srcAbsPath = info.get("srcAbsPath").toString();
             String destAbsPath = info.get("destAbsPath").toString();                    
-            System.out.println("--srcAbsPath: " + srcAbsPath);
-            System.out.println("--destAbsPath: " + destAbsPath);         
+            //leggi JCR observation move and order
+            s.move(srcAbsPath, destAbsPath);
             //chiami session move con questi 2 parametri nel repo copia
         }        
 }
@@ -293,6 +322,45 @@ static void Remove_Property(Session s, Event e)
 {
         
 }
+
+    static void EsportaSource(Node source, ByteArrayOutputStream baos, boolean export_recursively) throws RepositoryException, IOException
+    {
+        System.out.println("Exporting Node: " + source.getPath()); 
+        //true =legge sottonodi ricorsivamente per l'export
+        //false = i binary data non vengono salvati in output
+        if(export_recursively)
+        {           
+            System.out.println("------------recursively");
+            //false = don't skip binary
+            //false = no recursively, quindi 
+            s_old.exportSystemView(source.getPath(), baos, false, false);
+        }
+        else
+        {
+            System.out.println("------------not recursively");
+            //false = don't skip binary
+            //true = no recursively            
+            s_old.exportSystemView(source.getPath(), baos, false, true); 
+        }
+        
+        
+    }
+//DA TESTARE
+    static String GetParentNodePath(String path)
+    {
+        //es da /home/luca ritorna /home
+        String parent_node_path = path.substring(0, path.lastIndexOf('/'));
+        return parent_node_path;
+    }        
+    
+    static void ImportaDest(Node dest, byte[] buffer, Session s_new) throws IOException, RepositoryException
+    {
+        System.out.println("Importing node: " + dest.getPath());
+        
+        ByteArrayInputStream bais = new ByteArrayInputStream(buffer);
+        s_new.importXML(dest.getPath(), bais, ImportUUIDBehavior.IMPORT_UUID_COLLISION_REMOVE_EXISTING);        
+    }   
+
 
 }
 
