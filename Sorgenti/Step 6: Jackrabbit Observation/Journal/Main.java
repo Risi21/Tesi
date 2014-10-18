@@ -17,6 +17,7 @@ import java.io.InputStream;
 import java.util.*;
 import javax.jcr.Credentials;
 import javax.jcr.ImportUUIDBehavior;
+import javax.jcr.NamespaceRegistry;
 import javax.jcr.Node;
 import javax.jcr.Property;
 import javax.jcr.PropertyType;
@@ -25,6 +26,12 @@ import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import javax.jcr.SimpleCredentials;
 import javax.jcr.Workspace;
+import javax.jcr.nodetype.NodeType;
+import javax.jcr.nodetype.NodeTypeIterator;
+import javax.jcr.nodetype.NodeTypeManager;
+import javax.jcr.nodetype.NodeTypeTemplate;
+import javax.jcr.nodetype.PropertyDefinition;
+import javax.jcr.nodetype.PropertyDefinitionTemplate;
 import javax.jcr.observation.Event;
 import javax.jcr.observation.EventIterator;
 import javax.jcr.observation.EventJournal;
@@ -43,30 +50,33 @@ import sun.net.www.MimeTable;
  */
 public class Main {
     
-    static Session s_old = null;
     //per ogni evento Add_Node(), aggiunge nodo della sessione del repo vecchio
     //serve per aggiungere / modificare in seguito eventuali proprietà o binary data
     static List<Node> added_nodes = new ArrayList<Node>();
+    static Session s_old = null;
+    static Session s_new = null;
     
     public static void main(String[] args) throws Exception 
     {
             //repo (cluster) che si vuole sincronizzare
-            String url = "http://localhost:11003/jackrabbit/server/";
+            String url = "http://localhost:11005/jackrabbit/server/";
             String workspace = "default";
-            String username = "uscc2";
-            String password = "pscc2";
-            int event_filter = Event.NODE_ADDED | Event.PROPERTY_ADDED | Event.NODE_REMOVED | Event.NODE_MOVED | Event.PROPERTY_REMOVED | Event.PROPERTY_CHANGED | Event.PERSIST;
+            String username = "uoj1";
+            String password = "poj1";
+            s_old = Session_Login(url, workspace, username, password);                        
             
-            //legge journal del repo (cluster) identificato dall'url
-            EventJournal ej = Read_Journal(url, workspace, username, password, event_filter);            
-            
-            Stack<Event> events = Reverse_Events(ej);
-            
-            String url2 = "http://localhost:11004/jackrabbit/server/";
+            String url2 = "http://localhost:11006/jackrabbit/server/";
             String workspace2 = "default";
-            String username2 = "uscc2c";
-            String password2 = "pscc2c";            
-            Redo_Events(events,url2, workspace2, username2, password2);
+            String username2 = "uoj1s";
+            String password2 = "poj1s";
+            s_new = Session_Login(url2, workspace2, username2, password2);                                   
+            
+            System.out.println("Registro namespaces e nodetypes");
+            RegisterNamespaces();        
+            RegisterNodeTypes();      
+            System.out.println("Done");
+            
+            Sync_Journal();
 }
     
 static String getEventTypeName(int type)
@@ -84,12 +94,16 @@ static String getEventTypeName(int type)
     }
 }    
 
-static EventJournal Read_Journal(String repo_url, String workspace, String username, String password, int event_filter) throws RepositoryException
+static Session Session_Login(String url, String workspace, String username, String password) throws RepositoryException
 {
-            Repository repo = JcrUtils.getRepository(repo_url);
-            Credentials sc = new SimpleCredentials(username,password.toCharArray());
-            s_old = repo.login(sc,workspace);
+        Repository repo = JcrUtils.getRepository(url);
+        Credentials sc = new SimpleCredentials(username,password.toCharArray());
+        Session s = repo.login(sc,workspace);    
+        return s;
+}        
 
+static EventJournal Read_Journal(Session s_old, int event_filter) throws RepositoryException
+{
             ObservationManager omgr = s_old.getWorkspace().getObservationManager();           
             
             // ----- READ THE EVENT JOURNAL -----------------------------------
@@ -97,21 +111,35 @@ static EventJournal Read_Journal(String repo_url, String workspace, String usern
 
 }
 
-static Stack<Event> Reverse_Events(EventJournal ej)
+static Queue< Stack<Event> > Reverse_Events(EventJournal ej)
 {
     //fare lo skipTo alla data precedente a quella da cui si vuole partire per leggere tutti gli eventi
-    long last = 1413472594690L;
+    long last = 1413651943761L;
     ej.skipTo(last);    
     
-    Stack<Event> output = new Stack<Event>();
+    //Stack<Event> output = new Stack<Event>();
+    Queue< Stack<Event> > global_set = new LinkedList< Stack<Event> >();
     
         try 
         {                
             //se non ce ne sono altri, va nel catch
-            output.push(ej.nextEvent());                
+            //esempio se lo skipToDate risulta già essere aggiornato all'ultima data va subito nel catch
+            //Event e = ej.nextEvent();
+            //output.push();                
+            Event e;
             while (true) 
             {
-                output.push(ej.nextEvent());
+                Stack<Event> local_set = new Stack<Event>();
+                //ogni gruppo di eventi termina con l'evento PERSIST                
+                do
+                {
+                    //inserisco tutti gli eventi nella coda temporanea
+                    e = ej.nextEvent();
+                    local_set.push(e);
+                }
+                while(e.getType() != Event.PERSIST);
+                //aggiungo questo gruppo di eventi invertiti nella coda
+                global_set.add(local_set);
             }
         } 
         catch (NoSuchElementException ex) 
@@ -119,20 +147,226 @@ static Stack<Event> Reverse_Events(EventJournal ej)
             //fine eventi
         }    
     
-    return output;
+    return global_set;
 }              
 
-static void Redo_Events(Stack<Event> events, String repo_url, String workspace, String username, String password) throws RepositoryException, IOException
+    
+    static void RegisterNamespaces() throws RepositoryException
+    {
+        NamespaceRegistry nrSource = s_old.getWorkspace().getNamespaceRegistry();
+        NamespaceRegistry nrDest = s_new.getWorkspace().getNamespaceRegistry();
+        
+        //registro dcr:="http://www.day.com/jcr/webdav/1.0" per getInfo()
+        //serve per Event.getInfo()...
+        nrSource.registerNamespace("dcr", "http://www.day.com/jcr/webdav/1.0");
+        nrDest.registerNamespace("dcr", "http://www.day.com/jcr/webdav/1.0");
+        
+        //prendo tutti i prefissi dei namespace registrati nel database sorgente
+        String[] prefixSource = nrSource.getPrefixes();        
+        
+        //prendo tutti i prefissi dei namespace registrati nel database destinatario (quelli presenti di default)
+        String[] vetPrefixDest = nrDest.getPrefixes();
+        List prefixDest = Arrays.asList(vetPrefixDest);
+                        
+        for(int i = 0; i < prefixSource.length; i++)
+        {
+            System.out.println("prefisso: " + prefixSource[i] + " url: " + nrSource.getURI(prefixSource[i]));
+            if(!prefixDest.contains(prefixSource[i]))
+            {
+                System.out.println("--prefisso: " + prefixSource[i] + " url: " + nrSource.getURI(prefixSource[i]));
+                nrDest.registerNamespace(prefixSource[i], nrSource.getURI(prefixSource[i]));
+            }                
+        }         
+    }        
+    
+    static void RegisterNodeTypes() throws RepositoryException
+    {
+        NodeTypeManager ntmSource = s_old.getWorkspace().getNodeTypeManager();
+        NodeTypeManager ntmDest = s_new.getWorkspace().getNodeTypeManager();
+                
+        NodeTypeIterator ntiSource = ntmSource.getAllNodeTypes();        
+        NodeTypeIterator ntiDest = ntmDest.getAllNodeTypes();        
+        
+        //riempie la lista con i nodetype già presenti nel database destinazione
+        List<String> namesNodeTypeDest = new ArrayList<String>();
+        while(ntiDest.hasNext())
+        {
+            namesNodeTypeDest.add(ntiDest.nextNodeType().getName());
+        }                
+        
+        //fra tutti i nodi del database sorgente, quelli che non sono presenti nel database
+        //vecchio vengono aggiunti a questa lista
+        List<NodeType> toRegisters = new ArrayList<NodeType>();
+        
+        while(ntiSource.hasNext())
+        {
+            NodeType tmp = ntiSource.nextNodeType();        
+            if(!namesNodeTypeDest.contains(tmp.getName()))
+            {
+                toRegisters.add(tmp);
+            }            
+        }
+        
+        //numero di nodi da registrare
+        int fixedCont = toRegisters.size();
+        
+        //salvo elementi dell'iteratore in un vettore
+        NodeType[] vetToRegisters = new NodeType[fixedCont];  
+        
+        Iterator<NodeType> vtr = toRegisters.iterator();
+        int index = 0;        
+        //salva tutti i nodetype dall'iterator al vettore
+        while(vtr.hasNext())
+        {
+            vetToRegisters[index++] = vtr.next();
+        }        
+        
+        
+//vettore di flag, se true il rispettivo nodo è già stato registrato, didefault hanno il valore false        
+        boolean[] flag = new boolean[fixedCont];
+        
+//finchè tutti i flag non sono true significa che i nodi non sono stati registrati
+//prima registra nodi che non hanno supertypes
+//poi registra nodi che hanno tutti i supertypes registrati
+//per fare questi controlli, si scorrono i 2 vettori n volte
+//quando si registra un nodo, il contatore decrementa e il flag diventa true        
+        index = 0;
+        int cont = fixedCont;
+        while(cont > 0)
+        {            
+            //se sono arrivato in fondo ai vettori, rincomincio da capo
+            if(index == fixedCont)
+            {
+                index = 0;
+            }
+            
+            //condizione - registro nodo solo se:
+            //il flag è false AND
+            //non ha supertypes  OR se ha supertypes devono avere flag tutti a true             
+            if(flag[index] == false &&
+                (vetToRegisters[index].getDeclaredSupertypes().length == 0 
+                 || AllSuperTypes(vetToRegisters[index], flag, vetToRegisters) == true))
+            {
+                RegisterNode(vetToRegisters[index], ntmDest);
+                cont--;
+                flag[index] = true;
+            }
+            
+            index++;
+        }
+        
+    }             
+    
+    //N.B. si può migliorare l'efficienza usando un oggetto composto, che contiene
+    //(NodeType, boolean) e fare poi il vettore di questo oggetto composto
+    static boolean AllSuperTypes(NodeType toCheck, boolean[] flag, NodeType[] vetSource)
+    {
+        //controllo se tutti i superTypes hanno flag = a true
+        NodeType[] st = toCheck.getDeclaredSupertypes();
+        //per ogni nodo supertipo devo controllare se il rispettivo flag è true
+        //devo prima trovare l'indice del vettore flag, confrontando i nomi del nodetype
+        for(int i = 0; i < st.length; i++)
+        {
+            for(int k = 0; k < vetSource.length; k++)
+            {
+                if(vetSource[k].getName().equals(st[i].getName()))
+                {
+                    //controllo flag
+                    if(!flag[k])
+                    {
+                        //devono essere tutti true i flag dei supertypes
+                        return false;
+                    }    
+                }    
+            }    
+        }    
+        //tutti i flag sono true
+        return true;
+    }       
+    
+    static void RegisterNode(NodeType toBeRegistered, NodeTypeManager ntmDest) throws RepositoryException
+    {
+        System.out.println("creazione nodo: " + toBeRegistered.getName());
+
+        //crea il template che sarà poi da registrare nel database nuovo
+        NodeTypeTemplate nodeTemplate = ntmDest.createNodeTypeTemplate();                
+
+        nodeTemplate.setName(toBeRegistered.getName());
+        nodeTemplate.setAbstract(toBeRegistered.isAbstract());
+        nodeTemplate.setMixin(toBeRegistered.isMixin());
+        nodeTemplate.setQueryable(toBeRegistered.isQueryable());
+        nodeTemplate.setOrderableChildNodes(toBeRegistered.hasOrderableChildNodes());
+        nodeTemplate.setPrimaryItemName(toBeRegistered.getPrimaryItemName());
+
+        //setto i supertipi del nodo
+        NodeType[] superTypes = toBeRegistered.getDeclaredSupertypes();
+        String[] superTypesNames = new String[superTypes.length];
+        if(superTypes.length > 0)
+        {
+            System.out.println("---Supertypes: ");
+            for(int i = 0; i < superTypes.length; i++)
+            {
+                System.out.println("------" + superTypes[i].getName());                        
+                superTypesNames[i] = superTypes[i].getName();
+            }            
+        }
+        //setto i supertipi nel template:
+        nodeTemplate.setDeclaredSuperTypeNames(superTypesNames);
+
+        //proprietà
+        List propertyList = nodeTemplate.getPropertyDefinitionTemplates();  
+        PropertyDefinition[] prop = toBeRegistered.getDeclaredPropertyDefinitions();
+        if(prop.length > 0)
+        {
+            System.out.println("---Proprietà: ");
+            for(int i = 0; i < prop.length; i++)
+            {
+                System.out.println("------" + prop[i].getName() + " tipo: " + PropertyType.nameFromValue(prop[i].getRequiredType()) + " mandagtory: " + prop[i].isMandatory() + " multiple: " + prop[i].isMultiple() + " protected: " + prop[i].isProtected() + " autocreated: " + prop[i].isAutoCreated() + " fulltextsearch: " + prop[i].isFullTextSearchable());
+                //setto template proprietà
+                PropertyDefinitionTemplate propertyTemplate = ntmDest.createPropertyDefinitionTemplate();  
+
+                propertyTemplate.setAutoCreated(prop[i].isAutoCreated());
+                propertyTemplate.setFullTextSearchable(prop[i].isFullTextSearchable());
+                propertyTemplate.setMandatory(prop[i].isMandatory());
+                propertyTemplate.setMultiple(prop[i].isMultiple());
+                propertyTemplate.setName(prop[i].getName());
+                propertyTemplate.setProtected(prop[i].isProtected());
+                propertyTemplate.setQueryOrderable(prop[i].isQueryOrderable());
+                propertyTemplate.setOnParentVersion(prop[i].getOnParentVersion());
+                propertyTemplate.setRequiredType(prop[i].getRequiredType());
+                propertyTemplate.setAvailableQueryOperators(prop[i].getAvailableQueryOperators());
+                propertyTemplate.setValueConstraints(prop[i].getValueConstraints());
+                propertyTemplate.setDefaultValues(prop[i].getDefaultValues());
+
+                propertyList.add(propertyTemplate);
+            }            
+        } 
+        //registro il nododal template
+        ntmDest.registerNodeType(nodeTemplate, true);        
+    }    
+
+
+static void Sync_Journal() throws RepositoryException, IOException
 {
-    //DEBUG
-    //Print_Events(events);
+   int event_filter = Event.NODE_ADDED | Event.PROPERTY_ADDED | Event.NODE_REMOVED | Event.NODE_MOVED | Event.PROPERTY_REMOVED | Event.PROPERTY_CHANGED | Event.PERSIST;            
+    //legge journal del repo (cluster) identificato dall'url
+    EventJournal ej = Read_Journal(s_old, event_filter);
+    //ogni gruppo di eventi è formato dagli eventi base e finisce col PERSIST (session.save() )
+    //il gruppo di eventi rimane ordinato ma all'interno gli eventi sono invertiti
+    //quindi il primo evento di ogni gruppo sarà il PERSIST
+    Queue< Stack<Event> > event_sets = Reverse_Events(ej); 
     
-    //faccio il login nel repo che deve rifare gli eventi per essere sincronizzato
-    Repository repo = JcrUtils.getRepository(repo_url);
-    Credentials sc = new SimpleCredentials(username,password.toCharArray());
-    Session s = repo.login(sc,workspace);
+    while(!event_sets.isEmpty())
+    {
+        Redo_Events(event_sets.remove());
+    }    
     
-    try
+}        
+    
+static void Redo_Events(Stack<Event> events) throws RepositoryException, IOException
+{
+   
+ try
     {
         Event e = events.pop();
         while(true)
@@ -148,21 +382,21 @@ static void Redo_Events(Stack<Event> events, String repo_url, String workspace, 
                         //DEBUG
                         System.out.println("Chiamo Evento Add_Node()");
                         //aggiungo nodo
-                        Add_Node(s,e);
+                        Add_Node(e);
                         break;
                     }
                 case Event.NODE_REMOVED:
                     {
                         //DEBUG
                         System.out.println("Chiamo Evento Remove_Node()");                        
-                        Remove_Node(s, e);
+                        Remove_Node(e);
                         break;
                     }
                 case Event.NODE_MOVED:
                     {
                         //DEBUG
                         System.out.println("Chiamo Evento Move_Node()");
-                        Move_Node(s, e);                                                
+                        Move_Node(e);                                                
                         break;
                     }          
                 
@@ -170,21 +404,21 @@ static void Redo_Events(Stack<Event> events, String repo_url, String workspace, 
                     {
                                                 //DEBUG
                         System.out.println("Chiamo Evento Add_Prop()");
-                        Add_Property(s, e);
+                        Add_Property(e);
                         break;
                     }
                 case Event.PROPERTY_CHANGED:
                     {
                         //DEBUG
                         System.out.println("Chiamo Evento Change_Prop()");                        
-                        Change_Property(s, e);
+                        Change_Property(e);
                         break;
                     }
                 case Event.PROPERTY_REMOVED:
                     {
                         //DEBUG
                         System.out.println("Chiamo Evento REmove_Prop()");                        
-                        Remove_Property(s, e);
+                        Remove_Property(e);
                         break;
                     }
                 
@@ -193,7 +427,7 @@ static void Redo_Events(Stack<Event> events, String repo_url, String workspace, 
                                                 //DEBUG
                         System.out.println("Chiamo Evento Persist() session.save()");
 //inizia un'altra serie di eventi, quindi faccio il save per salvare gli eventi già sincronizzati:
-                        s.save();
+                        s_new.save();
                         break;
                     }
                 default:
@@ -211,8 +445,9 @@ static void Redo_Events(Stack<Event> events, String repo_url, String workspace, 
     {
         System.out.println(" Stack finito: " + e.getMessage());
         System.out.println("Chiamo session.save()");
-        s.save();
+        s_new.save();
     }
+        
     
 }        
 
@@ -268,7 +503,7 @@ static void Print_Events(Stack<Event> events)
     
 }
 
-static void Add_Node(Session s, Event e) throws RepositoryException, IOException
+static void Add_Node(Event e) throws RepositoryException, IOException
 {
     //parametri: absolute_path, node_type, session
 
@@ -277,7 +512,7 @@ static void Add_Node(Session s, Event e) throws RepositoryException, IOException
     potrebbe capitare che nello stesso set di eventi, il vecchio repo abbia aggiunto sia il nodo padre 
     che il nodo figlio, quindi quando faccio l'import ricorsivo del padre ho anche il figlio
     */
-    if(s.nodeExists(e.getPath()))
+    if(s_new.nodeExists(e.getPath()))
     {
         //se il nodo esiste già non faccio niente
         System.out.println("Salto Add_Node()");
@@ -287,52 +522,72 @@ static void Add_Node(Session s, Event e) throws RepositoryException, IOException
         return;
     }
     
+    //se il nodo non esiste più nel repo vecchio, vuol dire che dopo è stato fatto un NODE_REMOVED
+    //o un NODE_MOVED, quindi non lo aggiungo
+    //TODONT
+    
     //prendo nodo padre, al quale farò poi l'import:
     String adding_node_path = e.getPath();
     String parent_node_path = GetParentNodePath(adding_node_path); //prende il path fino all'ultima sbarra / (senza la sbarra, es /home/luca ritorna /home)
-    Node parent_node = s.getNode(parent_node_path);    
+    Node parent_node = s_new.getNode(parent_node_path);    
     //faccio l'export sempre ricorsivo
     boolean export_recursively = true;
     //prendo nodo da esposrtare nella sessione del cluster vecchio:
     Node to_export = s_old.getNode(e.getPath());
     ByteArrayOutputStream baos = EsportaSource(to_export, export_recursively);
-    ImportaDest(parent_node, baos.toByteArray(), s);    
+    ImportaDest(parent_node, baos.toByteArray());    
     
     //aggiunge il nodo esportato dalla sessione del repo vecchio alla lista dei nodi aggiunti
     added_nodes.add(to_export);
 }
 
-static void Remove_Node(Session s, Event e) throws RepositoryException
+static void Remove_Node(Event e) throws RepositoryException
 {
-    s.removeItem(e.getPath());
+    try
+    {
+        s_new.removeItem(e.getPath());        
+    }
+    catch(javax.jcr.PathNotFoundException pe)
+    {
+            //se capita qui è perchè prima ha fatto l'evento NODE_MOVED,
+        //il quale dopo genera l'evento NODE_REMOVED
+        //non trova il nodo perchè l'ha già spostato
+        return;
+    }
+
 }
 //TODONT
-static void Move_Node(Session s, Event e) throws RepositoryException
+static void Move_Node(Event e) throws RepositoryException
 {
         //stampo informazioni aggiuntive:                
         Map info = e.getInfo();
+
+        //DEBUG
+        System.out.println(info);
+        System.out.println(e);
+        
         //controllo se è stato generato da Node.orderBefore o no
         //in ogni caso i 2 parametri letti sono gli stessi parametri di input che hanno causato l'evento
         try
         {
-            String srcChildRelPath = info.get("srcChildRelPath").toString();
-            String destChildRelPath = info.get("destChildRelPath").toString();
+            String srcChildRelPath = info.get("dcr:srcChildRelPath").toString();
+            String destChildRelPath = info.get("dcr:destChildRelPath").toString();
             //richiamo il metodo orderBefore con i 2 parametri letti:
-            Node to_order = s.getNode(e.getPath());
+            Node to_order = s_new.getNode(e.getPath());
             to_order.orderBefore(srcChildRelPath, destChildRelPath);
         }
         catch(Exception ex) //session or workspace move
         {
-            String srcAbsPath = info.get("srcAbsPath").toString();
-            String destAbsPath = info.get("destAbsPath").toString();                    
+            String srcAbsPath = info.get("dcr:srcAbsPath").toString();
+            String destAbsPath = info.get("dcr:destAbsPath").toString();                    
             //leggi JCR observation move and order
-            s.move(srcAbsPath, destAbsPath);
+            s_new.move(srcAbsPath, destAbsPath);
             //chiami session move con questi 2 parametri nel repo copia
         }        
 }
 
 
-static void Add_Property(Session s, Event e) throws RepositoryException
+static void Add_Property(Event e) throws RepositoryException
 {
        //controllo se la proprietà viene aggiunta in seguito ad un evento Add_Node o no
     //nel primo caso ho già fatto l'import dal cluster vecchio, quindi ho importato anche la proprietà
@@ -344,7 +599,7 @@ static void Add_Property(Session s, Event e) throws RepositoryException
     Property old_p = s_old.getProperty(e.getPath());   
     
     Node old_container = old_p.getParent();
-    Node container = s.getNode(old_container.getPath()); //sessione nuova, nodo nuovo repo
+    Node container = s_new.getNode(old_container.getPath()); //sessione nuova, nodo nuovo repo
     
     //in ogni caso, se la proprietà è di tipo Binary, assegno il valore con il metodo set_property
     //perchè, anche se nel primo caso (il nodo è stato aggiunto nello stesso set di eventi)
@@ -394,9 +649,9 @@ System.out.println("CHECK 1st caso: " + n_path + " ==? " + path_to_control);
     }    
 }
 
-static void Change_Property(Session s, Event e) throws RepositoryException
+static void Change_Property(Event e) throws RepositoryException
 {
-        Property p = s.getProperty(e.getPath());
+        Property p = s_new.getProperty(e.getPath());
         Property old_p = s_old.getProperty(e.getPath());
         //controllo se è multipla
         if(old_p.isMultiple())
@@ -410,9 +665,9 @@ static void Change_Property(Session s, Event e) throws RepositoryException
         
 }
 
-static void Remove_Property(Session s, Event e) throws RepositoryException
+static void Remove_Property(Event e) throws RepositoryException
 {
-        Property p = s.getProperty(e.getPath());
+        Property p = s_new.getProperty(e.getPath());
         p.remove();        
 }
 
@@ -429,33 +684,6 @@ static void Remove_Property(Session s, Event e) throws RepositoryException
             //true = skip binary
             //false = no recursively, quindi ricorsivo
             s_old.exportSystemView(source.getPath(), baos, true, false);
-
-            //DEBUG FILE XML
-            /*
-            		FileOutputStream fop = null;
-		File file;
-
-		try {
- 
-			file = new File("/home/luca/Scrivania/out.xml");
-			fop = new FileOutputStream(file);
- 
-			// if file doesnt exists, then create it
-			if (!file.exists()) {
-				file.createNewFile();
-			}
- 
-                        s_old.exportSystemView(source.getPath(), fop, false, false);
-
-			fop.flush();
-			fop.close();
- 
-			System.out.println("Done");
- 
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-            */
         }
         else
         {
@@ -481,7 +709,7 @@ static void Remove_Property(Session s, Event e) throws RepositoryException
         return parent_node_path;
     }        
     
-    static void ImportaDest(Node dest, byte[] buffer, Session s_new) throws IOException, RepositoryException
+    static void ImportaDest(Node dest, byte[] buffer) throws IOException, RepositoryException
     {
         System.out.println("Importing node under " + dest.getPath() + " :");
         
@@ -489,18 +717,8 @@ static void Remove_Property(Session s, Event e) throws RepositoryException
         ByteArrayInputStream bais = new ByteArrayInputStream(buffer);
                     System.out.println("Info array: bais available = " + bais.available());
             System.out.println("Info array: buffer length = " + buffer.length);
-      //  try
-       // {
+
             s_new.importXML(dest.getPath(), bais, ImportUUIDBehavior.IMPORT_UUID_COLLISION_REMOVE_EXISTING);                    
-            /*}
-        catch(java.lang.ArrayIndexOutOfBoundsException e)
-        {
-            System.out.println(e.getMessage());
-            System.out.println("");
-            System.out.println("Info array: bais available = " + bais.available());
-            System.out.println("Info array: buffer length = " + buffer.length);
-        }
-                */
             
     }   
 
@@ -510,4 +728,3 @@ static void Print_Event_Info(Event e) throws RepositoryException
 }        
     
 }
-

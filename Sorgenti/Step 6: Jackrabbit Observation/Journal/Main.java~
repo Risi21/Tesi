@@ -8,20 +8,23 @@ package com.luca.journal;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
 import javax.jcr.Credentials;
+import javax.jcr.ImportUUIDBehavior;
 import javax.jcr.Node;
 import javax.jcr.Property;
+import javax.jcr.PropertyType;
 import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import javax.jcr.SimpleCredentials;
 import javax.jcr.Workspace;
-import javax.jcr.ImportUUIDBehavior;
 import javax.jcr.observation.Event;
 import javax.jcr.observation.EventIterator;
 import javax.jcr.observation.EventJournal;
@@ -41,6 +44,9 @@ import sun.net.www.MimeTable;
 public class Main {
     
     static Session s_old = null;
+    //per ogni evento Add_Node(), aggiunge nodo della sessione del repo vecchio
+    //serve per aggiungere / modificare in seguito eventuali proprietà o binary data
+    static List<Node> added_nodes = new ArrayList<Node>();
     
     public static void main(String[] args) throws Exception 
     {
@@ -119,7 +125,7 @@ static Stack<Event> Reverse_Events(EventJournal ej)
 static void Redo_Events(Stack<Event> events, String repo_url, String workspace, String username, String password) throws RepositoryException, IOException
 {
     //DEBUG
-    Print_Events(events);
+    //Print_Events(events);
     
     //faccio il login nel repo che deve rifare gli eventi per essere sincronizzato
     Repository repo = JcrUtils.getRepository(repo_url);
@@ -131,44 +137,62 @@ static void Redo_Events(Stack<Event> events, String repo_url, String workspace, 
         Event e = events.pop();
         while(true)
         {
+        //DEBUG
+        System.out.println("Print Event Info");
+        Print_Event_Info(e);
+
             switch(e.getType())
             {
                 case Event.NODE_ADDED:
                     {
+                        //DEBUG
+                        System.out.println("Chiamo Evento Add_Node()");
                         //aggiungo nodo
                         Add_Node(s,e);
                         break;
                     }
                 case Event.NODE_REMOVED:
                     {
+                        //DEBUG
+                        System.out.println("Chiamo Evento Remove_Node()");                        
                         Remove_Node(s, e);
                         break;
                     }
                 case Event.NODE_MOVED:
                     {
+                        //DEBUG
+                        System.out.println("Chiamo Evento Move_Node()");
                         Move_Node(s, e);                                                
                         break;
                     }          
                 
                 case Event.PROPERTY_ADDED:
                     {
+                                                //DEBUG
+                        System.out.println("Chiamo Evento Add_Prop()");
                         Add_Property(s, e);
                         break;
                     }
                 case Event.PROPERTY_CHANGED:
                     {
+                        //DEBUG
+                        System.out.println("Chiamo Evento Change_Prop()");                        
                         Change_Property(s, e);
                         break;
                     }
                 case Event.PROPERTY_REMOVED:
                     {
+                        //DEBUG
+                        System.out.println("Chiamo Evento REmove_Prop()");                        
                         Remove_Property(s, e);
                         break;
                     }
                 
                 case Event.PERSIST:
                     {
-                        //inizia un'altra serie di eventi, quindi faccio il save per salvare gli eventi già sincronizzati:
+                                                //DEBUG
+                        System.out.println("Chiamo Evento Persist() session.save()");
+//inizia un'altra serie di eventi, quindi faccio il save per salvare gli eventi già sincronizzati:
                         s.save();
                         break;
                     }
@@ -178,11 +202,7 @@ static void Redo_Events(Stack<Event> events, String repo_url, String workspace, 
                         System.out.println("ERROR: default generated in switch type_event");
                         break;
                     }
-            }    
-            if(e.getType() == Event.NODE_MOVED)
-            {
-                                                
-            }              
+            }         
             System.out.println("\r\n");
             e = events.pop();
         }        
@@ -260,6 +280,10 @@ static void Add_Node(Session s, Event e) throws RepositoryException, IOException
     if(s.nodeExists(e.getPath()))
     {
         //se il nodo esiste già non faccio niente
+        System.out.println("Salto Add_Node()");
+        //lo aggiungo negli added_nodes:
+        System.out.println("Lo aggiungo negli added nodes:");
+        added_nodes.add(s_old.getNode(e.getPath()));
         return;
     }
     
@@ -269,17 +293,17 @@ static void Add_Node(Session s, Event e) throws RepositoryException, IOException
     Node parent_node = s.getNode(parent_node_path);    
     //faccio l'export sempre ricorsivo
     boolean export_recursively = true;
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
     //prendo nodo da esposrtare nella sessione del cluster vecchio:
     Node to_export = s_old.getNode(e.getPath());
-    EsportaSource(to_export, baos, export_recursively);
+    ByteArrayOutputStream baos = EsportaSource(to_export, export_recursively);
     ImportaDest(parent_node, baos.toByteArray(), s);    
     
+    //aggiunge il nodo esportato dalla sessione del repo vecchio alla lista dei nodi aggiunti
+    added_nodes.add(to_export);
 }
 
 static void Remove_Node(Session s, Event e) throws RepositoryException
 {
-    //in questo caso fa la get, non la create:
     s.removeItem(e.getPath());
 }
 //TODONT
@@ -308,41 +332,140 @@ static void Move_Node(Session s, Event e) throws RepositoryException
 }
 
 
-static void Add_Property(Session s, Event e)
+static void Add_Property(Session s, Event e) throws RepositoryException
 {
-       
-}
-
-static void Change_Property(Session s, Event e)
-{
-        
-}
-
-static void Remove_Property(Session s, Event e)
-{
-        
-}
-
-    static void EsportaSource(Node source, ByteArrayOutputStream baos, boolean export_recursively) throws RepositoryException, IOException
+       //controllo se la proprietà viene aggiunta in seguito ad un evento Add_Node o no
+    //nel primo caso ho già fatto l'import dal cluster vecchio, quindi ho importato anche la proprietà
+    
+//nel secondo caso è stata aggiunta una proprietà ad un nodo già esistente
+//quindi aggiungo solo la proprietà senza fare l'import completo del nodo
+    
+    //la proprietà per adesso esiste solo nel repo vecchio
+    Property old_p = s_old.getProperty(e.getPath());   
+    
+    Node old_container = old_p.getParent();
+    Node container = s.getNode(old_container.getPath()); //sessione nuova, nodo nuovo repo
+    
+    //in ogni caso, se la proprietà è di tipo Binary, assegno il valore con il metodo set_property
+    //perchè, anche se nel primo caso (il nodo è stato aggiunto nello stesso set di eventi)
+    //è stato fatto l'export e l'import senza binary data
+    if(old_p.getType() == PropertyType.BINARY)
     {
+        //controllo se è multipla
+        if(old_p.isMultiple())
+        {
+            container.setProperty(old_p.getName(), old_p.getValues(), old_p.getType());
+        }
+        else
+        {
+            container.setProperty(old_p.getName(), old_p.getValue(), old_p.getType());
+        }
+        return;
+    }    
+    
+    //controllo se sono nel primo caso
+    String path_to_control = old_container.getPath();
+    System.out.println("added nodes length = " + added_nodes.size());
+    for(Node n:added_nodes)
+    {
+        String n_path = n.getPath();
+System.out.println("CHECK 1st caso: " + n_path + " ==? " + path_to_control);        
+        if(n_path.equals(path_to_control))
+        {            
+            //sono nel primo caso, non aggiungo la proprietà
+            System.out.println("Salto Add_Property()");
+            return;
+        }    
+    }
+    
+//se arrivo qui sono nel secondo caso
+   //aggiungo la proprietà nel nodo del repo nuovo, 
+    //leggendo il nome e il valore dallo stesso nodo del repo vecchio:
+
+    //aggiungo la proprietà:
+    //--controllo se è multipla o no
+    if(old_p.isMultiple())
+    {
+        container.setProperty(old_p.getName(), old_p.getValues(), old_p.getType());
+    }
+    else
+    {
+        container.setProperty(old_p.getName(), old_p.getValue(), old_p.getType());
+    }    
+}
+
+static void Change_Property(Session s, Event e) throws RepositoryException
+{
+        Property p = s.getProperty(e.getPath());
+        Property old_p = s_old.getProperty(e.getPath());
+        //controllo se è multipla
+        if(old_p.isMultiple())
+        {
+            p.setValue(old_p.getValues());            
+        }
+        else
+        {
+            p.setValue(old_p.getValue());            
+        }
+        
+}
+
+static void Remove_Property(Session s, Event e) throws RepositoryException
+{
+        Property p = s.getProperty(e.getPath());
+        p.remove();        
+}
+
+    static ByteArrayOutputStream EsportaSource(Node source, boolean export_recursively) throws RepositoryException, IOException
+    {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        
         System.out.println("Exporting Node: " + source.getPath()); 
         //true =legge sottonodi ricorsivamente per l'export
         //false = i binary data non vengono salvati in output
         if(export_recursively)
         {           
             System.out.println("------------recursively");
-            //false = don't skip binary
-            //false = no recursively, quindi 
-            s_old.exportSystemView(source.getPath(), baos, false, false);
+            //true = skip binary
+            //false = no recursively, quindi ricorsivo
+            s_old.exportSystemView(source.getPath(), baos, true, false);
+
+            //DEBUG FILE XML
+            /*
+            		FileOutputStream fop = null;
+		File file;
+
+		try {
+ 
+			file = new File("/home/luca/Scrivania/out.xml");
+			fop = new FileOutputStream(file);
+ 
+			// if file doesnt exists, then create it
+			if (!file.exists()) {
+				file.createNewFile();
+			}
+ 
+                        s_old.exportSystemView(source.getPath(), fop, false, false);
+
+			fop.flush();
+			fop.close();
+ 
+			System.out.println("Done");
+ 
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+            */
         }
         else
         {
             System.out.println("------------not recursively");
-            //false = don't skip binary
+            //true = skip binary
             //true = no recursively            
-            s_old.exportSystemView(source.getPath(), baos, false, true); 
+            s_old.exportSystemView(source.getPath(), baos, true, true); 
         }
         
+        return baos;
         
     }
 //DA TESTARE
@@ -350,17 +473,41 @@ static void Remove_Property(Session s, Event e)
     {
         //es da /home/luca ritorna /home
         String parent_node_path = path.substring(0, path.lastIndexOf('/'));
+        //se il path è una stringa vuota, significa che il parent node era la root '/'
+        if(parent_node_path.equals(""))
+        {
+            parent_node_path = "/";
+        }    
         return parent_node_path;
     }        
     
     static void ImportaDest(Node dest, byte[] buffer, Session s_new) throws IOException, RepositoryException
     {
-        System.out.println("Importing node: " + dest.getPath());
+        System.out.println("Importing node under " + dest.getPath() + " :");
         
+        //ByteArrayInputStream bais = new ByteArrayInputStream(buffer);
         ByteArrayInputStream bais = new ByteArrayInputStream(buffer);
-        s_new.importXML(dest.getPath(), bais, ImportUUIDBehavior.IMPORT_UUID_COLLISION_REMOVE_EXISTING);        
+                    System.out.println("Info array: bais available = " + bais.available());
+            System.out.println("Info array: buffer length = " + buffer.length);
+      //  try
+       // {
+            s_new.importXML(dest.getPath(), bais, ImportUUIDBehavior.IMPORT_UUID_COLLISION_REMOVE_EXISTING);                    
+            /*}
+        catch(java.lang.ArrayIndexOutOfBoundsException e)
+        {
+            System.out.println(e.getMessage());
+            System.out.println("");
+            System.out.println("Info array: bais available = " + bais.available());
+            System.out.println("Info array: buffer length = " + buffer.length);
+        }
+                */
+            
     }   
 
-
+static void Print_Event_Info(Event e) throws RepositoryException
+{
+    System.out.println(" - Data: " + e.getDate() + "\r\n - Id: " + e.getIdentifier() + "\r\n - Path: " + e.getPath() + "\r\n - Type: " + getEventTypeName(e.getType()) + "\r\n - UserData " + e.getUserData() + "\r\n - UserID: " + e.getUserID() + "\r\n");                
+}        
+    
 }
 
