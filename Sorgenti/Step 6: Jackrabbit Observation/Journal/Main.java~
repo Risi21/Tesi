@@ -19,7 +19,10 @@ import javax.jcr.Credentials;
 import javax.jcr.ImportUUIDBehavior;
 import javax.jcr.NamespaceRegistry;
 import javax.jcr.Node;
+import javax.jcr.NodeIterator;
+import javax.jcr.PathNotFoundException;
 import javax.jcr.Property;
+import javax.jcr.PropertyIterator;
 import javax.jcr.PropertyType;
 import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
@@ -53,6 +56,7 @@ public class Main {
     //per ogni evento Add_Node(), aggiunge nodo della sessione del repo vecchio
     //serve per aggiungere / modificare in seguito eventuali proprietà o binary data
     static List<Node> added_nodes = new ArrayList<Node>();
+    static List<Node> incomplete_nodes = new ArrayList<Node>();
     static Session s_old = null;
     static Session s_new = null;
     
@@ -359,6 +363,33 @@ static void Sync_Journal() throws RepositoryException, IOException
     while(!event_sets.isEmpty())
     {
         Redo_Events(event_sets.remove());
+    }
+    
+    //adesso per ogni incomplete_node faccio export_import
+    //solo se il nodo esiste nel repo vecchio
+    //infatti potrebbero essere rimasti in questa lista dei nodi incompleti figli di altri nodi
+    //che sono stati cancellati nel repo, ma non dalla lista
+    boolean export_recursively = true;
+    for(int i = 0; i < incomplete_nodes.size(); i++)
+    {
+        Node incomplete = incomplete_nodes.remove(i);
+        //controllo se il nodo esiste nel repo vecchio:
+        if(s_old.nodeExists(incomplete.getPath()))
+        {
+            //potrebbe capitare di aveve un nodo incomplete, che esiste nel repo vecchio,
+            //ma che nel repo nuovo non esiste il padre??? DA VERIFICARE
+            //---
+            //faccio export_import senza binary data
+            Node source = s_old.getNode(incomplete.getPath());
+            String parent_node_path = GetParentNodePath(incomplete.getPath()); //prende il path fino all'ultima sbarra / (senza la sbarra, es /home/luca ritorna /home)
+            Node parent_node = s_new.getNode(parent_node_path);            
+            ByteArrayOutputStream baos = EsportaSource(source, export_recursively);
+            ImportaDest(parent_node, baos.toByteArray()); 
+            //poi controllo, per ogni nodo importato, se aveva una proprietà Binary
+            //per ogni proprietà Binary, chiamo il metodo WriteBinaryData()
+            //leggo quindi tutto il sottoaolbero del nodo importato
+            Sync_BinaryData(parent_node);
+        }    
     }    
     
 }        
@@ -428,6 +459,10 @@ static void Redo_Events(Stack<Event> events) throws RepositoryException, IOExcep
                         System.out.println("Chiamo Evento Persist() session.save()");
 //inizia un'altra serie di eventi, quindi faccio il save per salvare gli eventi già sincronizzati:
                         s_new.save();
+                        //cancello la lista degli added_nodes, altrimenti se dopo un session.save c'è
+                        //un Add-Property di un nodo aggiunto nella sessione prima, non mi aggiunge
+                        //la proprietà nuova
+                        added_nodes.clear();
                         break;
                     }
                 default:
@@ -449,6 +484,65 @@ static void Redo_Events(Stack<Event> events) throws RepositoryException, IOExcep
     }
         
     
+}        
+
+static void Sync_BinaryData(Node root) throws RepositoryException
+{
+    Stack<Node> stackSource = new Stack<Node>();
+    while(!stackSource.empty())
+    {
+        Node currentSource = stackSource.pop();
+        //scrive tutte le proprietà Binary dal repo vecchio al nuovo per questo nodo:
+        Write_BinaryData(currentSource);
+        
+        
+        //controllo se il nodo corrente ha almeno un nodo figlio 
+        if(currentSource.hasNodes())
+        {
+            //aggiunge allo stack tutti i suoi figli nodi di primo livello
+            NodeIterator ni = currentSource.getNodes();
+            int cont = 0;
+            Node[] childnodes = new Node[(int)ni.getSize()];
+
+            while(ni.hasNext())
+            {
+                //per riscrivere i nodi nello stesso ordine del server originale,
+                //faccio la push() nello stack in ordine inverso, così le future pop()
+                //prenderanno per primi i primi nodi
+                childnodes[cont++] = ni.nextNode();                                      
+            }
+
+            //push in ordine inverso dei nodi
+            for(int i = cont - 1; i >= 0; i--)
+            {
+                stackSource.push(childnodes[i]);
+            }    
+        }        
+    }
+            
+}        
+
+static void Write_BinaryData(Node parent_node) throws RepositoryException
+{
+//per ogni proprietà controllo se è di tipo Binary
+    PropertyIterator pi = parent_node.getProperties();    
+    while(pi.hasNext())
+    {
+        Property p = pi.nextProperty();
+        if(p.getType() == PropertyType.BINARY)
+        {
+            //trovo proprietà del repo vecchio
+            Property p_old = s_old.getProperty(p.getPath());
+            if(p.isMultiple())
+            {
+                p.setValue(p_old.getValues());
+            }
+            else
+            {
+                p.setValue(p_old.getBinary());
+            }                
+        }    
+    }    
 }        
 
 static void Print_Events(Stack<Event> events)
@@ -506,57 +600,97 @@ static void Print_Events(Stack<Event> events)
 static void Add_Node(Event e) throws RepositoryException, IOException
 {
     //parametri: absolute_path, node_type, session
-
+    String adding_node_path = e.getPath();
+    
     //controllo prima che il nodo da importare non sia già presente nel repo nuovo
     /*
     potrebbe capitare che nello stesso set di eventi, il vecchio repo abbia aggiunto sia il nodo padre 
     che il nodo figlio, quindi quando faccio l'import ricorsivo del padre ho anche il figlio
     */
-    if(s_new.nodeExists(e.getPath()))
+    if(s_new.nodeExists(adding_node_path))
     {
         //se il nodo esiste già non faccio niente
         System.out.println("Salto Add_Node()");
         //lo aggiungo negli added_nodes:
         System.out.println("Lo aggiungo negli added nodes:");
-        added_nodes.add(s_old.getNode(e.getPath()));
+        added_nodes.add(s_new.getNode(adding_node_path));
         return;
     }
-    
+        
     //se il nodo non esiste più nel repo vecchio, vuol dire che dopo è stato fatto un NODE_REMOVED
-    //o un NODE_MOVED, quindi non lo aggiungo
-    //TODONT
+    //o un NODE_MOVED, quindi lo aggingo solo con il nome e lo metto nella lista degli incompleti
+    //il padre del nodo nel repo nuovo esiste perchè tutti i nodi incompleti sono aggiunti
+    //in questo caso si aggiungono anche tutti i figli dei nodi incompleti (etichettando incompleti anche loro)
+    //perchè se dopo un PERSIST c'è un MOVE di un nodo figlio incompleto, da PathNotFoundException
+    if(!s_old.nodeExists(adding_node_path))
+    {
+        System.out.println("Add_node() sono nel caso in cui nel repo vecchio non esiste più il nodo da aggiungere, perchè"
+                + "è stato fatto dopo un Move o un REMOVE");
+        JcrUtils.getOrCreateByPath(adding_node_path, null, s_new);
+        //rileggo nodo aggiuntocon l'istruzione precedente
+        Node incomplete = s_new.getNode(adding_node_path);
+        incomplete_nodes.add(incomplete);
+        return;
+    }        
     
+    
+    //se sono qui, il nodo esiste ancoa nel repo vecchio e non è il figlio di un altro nodo a cui era stato
+    //fatto in precedenza un export_import
+    //---
     //prendo nodo padre, al quale farò poi l'import:
-    String adding_node_path = e.getPath();
     String parent_node_path = GetParentNodePath(adding_node_path); //prende il path fino all'ultima sbarra / (senza la sbarra, es /home/luca ritorna /home)
     Node parent_node = s_new.getNode(parent_node_path);    
     //faccio l'export sempre ricorsivo
     boolean export_recursively = true;
     //prendo nodo da esposrtare nella sessione del cluster vecchio:
-    Node to_export = s_old.getNode(e.getPath());
+    Node to_export = s_old.getNode(adding_node_path);
     ByteArrayOutputStream baos = EsportaSource(to_export, export_recursively);
     ImportaDest(parent_node, baos.toByteArray());    
     
-    //aggiunge il nodo esportato dalla sessione del repo vecchio alla lista dei nodi aggiunti
-    added_nodes.add(to_export);
+    //aggiunge il nodo importato alla lista dei nodi aggiunti
+    added_nodes.add(s_new.getNode(adding_node_path));
 }
 
 static void Remove_Node(Event e) throws RepositoryException
 {
+    String removing_node_path = e.getPath();
     try
     {
-        s_new.removeItem(e.getPath());        
+        Node to_remove = s_new.getNode(removing_node_path);        
+        //cancello il nodo anche dalla lista degli added_node o degli incomplete_nodes
+        boolean eliminated = false;
+        eliminated = added_nodes.remove(to_remove);
+        if(eliminated)
+        {
+            System.out.println("Nodo Eliminato Da Added_Nodes");
+        }    
+        eliminated = incomplete_nodes.remove(to_remove);
+        if(eliminated)
+        {
+            System.out.println("Nodo Eliminato Da Added_Nodes");
+        }        
+        to_remove.remove();
+        System.out.println("Nodo Rimosso dal repo nuovo");
+        //N.B
+        //non elimino dalle liste tutti i sotto nodi del nodo eliminato, perchè
+        //non mi serve, in quanto
+        //added_nodes serve solo per saltare l'add_Property
+        //incomplete_nodes serve per saltare ADD_Property e per fare alla fine di Redo_Events tutti gli export_import
+        //solo se il nodo incompleto esiste nel repo vecchio
     }
     catch(javax.jcr.PathNotFoundException pe)
     {
             //se capita qui è perchè prima ha fatto l'evento NODE_MOVED,
         //il quale dopo genera l'evento NODE_REMOVED
         //non trova il nodo perchè l'ha già spostato
+        //quindi non faccio niente
+        System.out.println("Remove_Node() sono finito nel catch perchè il nodo da rimuovere non esiste più,"
+                + "probabilmente xkè prima è stato fatto un Node_Moved()");
         return;
     }
 
 }
-//TODONT
+
 static void Move_Node(Event e) throws RepositoryException
 {
         //stampo informazioni aggiuntive:                
@@ -595,62 +729,108 @@ static void Add_Property(Event e) throws RepositoryException
 //nel secondo caso è stata aggiunta una proprietà ad un nodo già esistente
 //quindi aggiungo solo la proprietà senza fare l'import completo del nodo
     
-    //la proprietà per adesso esiste solo nel repo vecchio
-    Property old_p = s_old.getProperty(e.getPath());   
+    String adding_property_path = e.getPath();
     
-    Node old_container = old_p.getParent();
-    Node container = s_new.getNode(old_container.getPath()); //sessione nuova, nodo nuovo repo
+    //se la proprietà non esiste nel repo vecchio,
+    //significa che dopo un altro evento o l'ha spostata o l'ha cancellata,
+    //quindi si aggiunge alla lista dei nodi incompleti il nodo
+    //alla fine di Redo_Events quindi faccio export_import per avere il nodo sincronizzato
     
-    //in ogni caso, se la proprietà è di tipo Binary, assegno il valore con il metodo set_property
-    //perchè, anche se nel primo caso (il nodo è stato aggiunto nello stesso set di eventi)
-    //è stato fatto l'export e l'import senza binary data
-    if(old_p.getType() == PropertyType.BINARY)
+    try
     {
-        //controllo se è multipla
-        if(old_p.isMultiple())
-        {
-            container.setProperty(old_p.getName(), old_p.getValues(), old_p.getType());
-        }
-        else
-        {
-            container.setProperty(old_p.getName(), old_p.getValue(), old_p.getType());
-        }
-        return;
-    }    
-    
-    //controllo se sono nel primo caso
-    String path_to_control = old_container.getPath();
-    System.out.println("added nodes length = " + added_nodes.size());
-    for(Node n:added_nodes)
-    {
-        String n_path = n.getPath();
-System.out.println("CHECK 1st caso: " + n_path + " ==? " + path_to_control);        
-        if(n_path.equals(path_to_control))
-        {            
-            //sono nel primo caso, non aggiungo la proprietà
-            System.out.println("Salto Add_Property()");
-            return;
-        }    
-    }
-    
-//se arrivo qui sono nel secondo caso
-   //aggiungo la proprietà nel nodo del repo nuovo, 
-    //leggendo il nome e il valore dallo stesso nodo del repo vecchio:
+            //la proprietà per adesso esiste solo nel repo vecchio
+        //potrebbe generare PathNotFoundException
+            Property old_p = s_old.getProperty(adding_property_path);   
 
-    //aggiungo la proprietà:
-    //--controllo se è multipla o no
-    if(old_p.isMultiple())
-    {
-        container.setProperty(old_p.getName(), old_p.getValues(), old_p.getType());
+            Node old_container = old_p.getParent();
+            Node container = s_new.getNode(old_container.getPath()); //sessione nuova, nodo nuovo repo
+
+            //in ogni caso, se la proprietà è di tipo Binary, assegno il valore con il metodo set_property
+            //perchè, anche se nel primo caso (il nodo è stato aggiunto nello stesso set di eventi)
+            //è stato fatto l'export e l'import senza binary data
+            if(old_p.getType() == PropertyType.BINARY)
+            {
+                //controllo se è multipla
+                if(old_p.isMultiple())
+                {
+                    container.setProperty(old_p.getName(), old_p.getValues(), old_p.getType());
+                }
+                else
+                {
+                    container.setProperty(old_p.getName(), old_p.getValue(), old_p.getType());
+                }
+                return;
+            }    
+
+            //controllo se sono nel primo caso
+            String path_to_control = old_container.getPath();
+            System.out.println("added nodes length = " + added_nodes.size());
+            for(Node n:added_nodes)
+            {
+                String n_path = n.getPath();
+                System.out.println("CHECK 1st caso: " + n_path + " ==? " + path_to_control);        
+                if(n_path.equals(path_to_control))
+                {            
+                    //sono nel primo caso, non aggiungo la proprietà
+                    System.out.println("Salto Add_Property() - added_nodes");
+                    return;
+                }    
+            }
+            //stessa cosa per gli incomplete_nodes
+            for(Node n:incomplete_nodes)
+            {
+                String n_path = n.getPath();
+                System.out.println("CHECK 1st caso: " + n_path + " ==? " + path_to_control);        
+                if(n_path.equals(path_to_control))
+                {            
+                    //sono nel primo caso, non aggiungo la proprietà
+                    System.out.println("Salto Add_Property() - incomplete-nodes");
+                    return;
+                }    
+            }
+            
+        //se arrivo qui sono nel secondo caso
+           //aggiungo la proprietà nel nodo del repo nuovo, 
+            //leggendo il nome e il valore dallo stesso nodo del repo vecchio:
+
+            //aggiungo la proprietà:
+            //--controllo se è multipla o no
+            if(old_p.isMultiple())
+            {
+                container.setProperty(old_p.getName(), old_p.getValues(), old_p.getType());
+            }
+            else
+            {
+                container.setProperty(old_p.getName(), old_p.getValue(), old_p.getType());
+            }    
+    
     }
-    else
+    catch(PathNotFoundException pe)
     {
-        container.setProperty(old_p.getName(), old_p.getValue(), old_p.getType());
-    }    
+        //aggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti
+        System.out.println("Add_Property Catch PathNotFoundException:"
+                + "\r\naggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti");
+        String parent_node = GetParentNodePath(adding_property_path);
+        incomplete_nodes.add(s_new.getNode(parent_node));
+    }        
 }
 
 static void Change_Property(Event e) throws RepositoryException
 {
+        //la proprietà esiste sicuramente nel repo nuovo perchè rifa tutti gli eventi
+    //nel repo vecchio invece, la proprietà potrebbe non esistere più perchè il nodo
+    //a cui fa riferimento potrebbe essere stato spostato.
+    //NON si può usare l'id del nodo come riferimento perchè dopo un move può cambiare
+    //(dipende dal repository, mi attengo alle specifiche jcr)
+    
+    //TODONT, FARE METODO GET_ITEM_NAME (dopo l'ultima /)
+    //RENDERE LA PROPRIETÀ INCOMPLETA
+    //SE SI SPOSTA IL NODO, DEVO SAPERE CHE HA UNA PROPRIETÀ INCOMPLETA
+    //ALLA FINE DI REDO_EVENTS LEGGERÒ POI IL VALORE DELLA PROPRIETÀ
+    String changing_property_path = e.getPath();
+    
+    try
+    {
         Property p = s_new.getProperty(e.getPath());
         Property old_p = s_old.getProperty(e.getPath());
         //controllo se è multipla
@@ -660,9 +840,24 @@ static void Change_Property(Event e) throws RepositoryException
         }
         else
         {
-            p.setValue(old_p.getValue());            
-        }
-        
+            if(p.getType() == PropertyType.BINARY)
+            {
+                p.setValue(old_p.getBinary());            
+            }
+            else
+            {
+                p.setValue(old_p.getValue());            
+            }    
+        }        
+    }
+    catch(PathNotFoundException pe)
+    {
+        //aggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti
+        System.out.println("Add_Property Catch PathNotFoundException:"
+                + "\r\naggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti");
+        String parent_node = GetParentNodePath(changing_property_path);
+        incomplete_nodes.add(s_new.getNode(parent_node));
+    }                
 }
 
 static void Remove_Property(Event e) throws RepositoryException
@@ -728,3 +923,4 @@ static void Print_Event_Info(Event e) throws RepositoryException
 }        
     
 }
+
