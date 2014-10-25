@@ -55,24 +55,24 @@ public class Main {
     
     //per ogni evento Add_Node(), aggiunge nodo della sessione del repo vecchio
     //serve per aggiungere / modificare in seguito eventuali proprietà o binary data
-    static List<Node> added_nodes = new ArrayList<Node>();
-    static List<Node> incomplete_nodes = new ArrayList<Node>();
+    static List<String> added_nodes = new ArrayList<String>();
+    static List<String> incomplete_nodes = new ArrayList<String>();
     static Session s_old = null;
     static Session s_new = null;
     
     public static void main(String[] args) throws Exception 
     {
             //repo (cluster) che si vuole sincronizzare
-            String url = "http://localhost:11005/jackrabbit/server/";
+            String url = "http://localhost:11028/jackrabbit/server/";
             String workspace = "default";
-            String username = "uoj1";
-            String password = "poj1";
+            String username = "uas4";
+            String password = "pas4";
             s_old = Session_Login(url, workspace, username, password);                        
             
-            String url2 = "http://localhost:11006/jackrabbit/server/";
+            String url2 = "http://localhost:11041/jackrabbit/server/";
             String workspace2 = "default";
-            String username2 = "uoj1s";
-            String password2 = "poj1s";
+            String username2 = "uas17";
+            String password2 = "pas17";
             s_new = Session_Login(url2, workspace2, username2, password2);                                   
             
             System.out.println("Registro namespaces e nodetypes");
@@ -118,7 +118,7 @@ static EventJournal Read_Journal(Session s_old, int event_filter) throws Reposit
 static Queue< Stack<Event> > Reverse_Events(EventJournal ej)
 {
     //fare lo skipTo alla data precedente a quella da cui si vuole partire per leggere tutti gli eventi
-    long last = 1413651943761L;
+    long last = 1414013035327L;
     ej.skipTo(last);    
     
     //Stack<Event> output = new Stack<Event>();
@@ -369,28 +369,102 @@ static void Sync_Journal() throws RepositoryException, IOException
     //solo se il nodo esiste nel repo vecchio
     //infatti potrebbero essere rimasti in questa lista dei nodi incompleti figli di altri nodi
     //che sono stati cancellati nel repo, ma non dalla lista
-    boolean export_recursively = true;
-    for(int i = 0; i < incomplete_nodes.size(); i++)
+    System.out.println("numero di nodi incompleti: " + incomplete_nodes.size());
+    //DEBUG 
+    Iterator<String> itn = incomplete_nodes.iterator();
+    while(itn.hasNext())
     {
-        Node incomplete = incomplete_nodes.remove(i);
-        //controllo se il nodo esiste nel repo vecchio:
-        if(s_old.nodeExists(incomplete.getPath()))
+        System.out.println("path nodo incompleto:  " + itn.next());
+    }    
+    
+    boolean export_recursively = true;
+    itn = incomplete_nodes.iterator();
+    while(itn.hasNext())
+    {
+        Node incomplete = s_new.getNode(itn.next());
+        //se c'è un nodo clone con lo stesso nome e che finisce quindi con le [], è solo per debug
+        String tmp = "";
+        String incomplete_path = "";
+        //DEBUG
+        try
         {
+            tmp = incomplete.getPath();
+            incomplete_path = tmp;                    
+        }
+        catch(javax.jcr.InvalidItemStateException ie)
+        {
+            //se sono qui è perchè ho cancellato il nodo incompleto prima di fare l'export import di un altro nodo
+            //in questo caso passo al nodo incompleto successivo
+            System.out.println("se sono qui è perchè ho cancellato il nodo incompleto prima di fare l'export import di un altro nodo"
+                    + "in questo caso passo al nodo incompleto successivo");
+            System.out.println("--incomplete: " + incomplete );
+            continue;
+        }    
+
+//DEBUG:        
+        /*
+        if(incomplete_path.charAt(incomplete_path.length() - 1) == ']')
+        {
+                incomplete_path = tmp.substring(0, tmp.length() - 4);
+        }
+        */
+        System.out.println("Faccio export import del nodo: " + incomplete_path);
+        //incomplete_path = Rimuovi_Quadre(incomplete_path);
+//System.out.println("che ora è: " + incomplete_path);        
+
+//controllo se il nodo esiste nel repo vecchio:
+        if(s_old.nodeExists(incomplete_path))
+        {
+            System.out.println("--Il nodo esiste nel repo vecchio");
             //potrebbe capitare di aveve un nodo incomplete, che esiste nel repo vecchio,
             //ma che nel repo nuovo non esiste il padre??? DA VERIFICARE
             //---
             //faccio export_import senza binary data
-            Node source = s_old.getNode(incomplete.getPath());
-            String parent_node_path = GetParentNodePath(incomplete.getPath()); //prende il path fino all'ultima sbarra / (senza la sbarra, es /home/luca ritorna /home)
-            Node parent_node = s_new.getNode(parent_node_path);            
+            Node source = s_old.getNode(incomplete_path);
+            String parent_node_path = GetParentNodePath(incomplete_path); //prende il path fino all'ultima sbarra / (senza la sbarra, es /home/luca ritorna /home)            
+            Node parent_node = s_new.getNode(parent_node_path);                        
+
+            //cancello il nodo che verrà poi esportato dal repo vecchio e aggiunto nel padre del repo nuovo
+            
+            Node dfssf2 = s_new.getNode(incomplete_path);
+            System.out.println("cancello nodo " + incomplete_path);
+            try
+            {
+                s_new.removeItem(incomplete_path);
+                //se il save genera l'eccezione...
+                s_new.save();
+            }
+            catch(javax.jcr.nodetype.ConstraintViolationException cve)
+            {
+                //se finisco in questo catch è perchè il nodo non si può cancellare, altrimenti
+                //violo la definizione del tipo di nodo che dice che deve avere questo figlio obbligatorio
+                System.out.println("\r\nNon cancello nodo xkè è stata generata javax.jcr.nodetype.ConstraintViolationException \r\n");
+                System.out.println("\r\nRitorna la sessione allo stato consistente con il refresh()");
+                s_new.refresh(false);
+//cve.printStackTrace();
+                System.out.println("\r\n");                
+            //    Node dfssf = s_new.getNode(incomplete_path);
+             //   System.out.println("figli = " + dfssf.getNodes().getSize());                
+                continue;
+            }    
+                        
+            //System.out.println("cancello nodo " + to_delete.getPath());
+            
+//Node nn = s_new.getNode(incomplete_path);
             ByteArrayOutputStream baos = EsportaSource(source, export_recursively);
             ImportaDest(parent_node, baos.toByteArray()); 
+            System.out.println("Salvo sessione dopo cancellazione import export");
+            s_new.save();
+            //ImportaDest(nn, baos.toByteArray()); 
             //poi controllo, per ogni nodo importato, se aveva una proprietà Binary
             //per ogni proprietà Binary, chiamo il metodo WriteBinaryData()
             //leggo quindi tutto il sottoaolbero del nodo importato
             Sync_BinaryData(parent_node);
+            s_new.save();
         }    
-    }    
+    }
+    System.out.println("session save ");
+    s_new.save();
     
 }        
     
@@ -488,17 +562,27 @@ static void Redo_Events(Stack<Event> events) throws RepositoryException, IOExcep
 
 static void Sync_BinaryData(Node root) throws RepositoryException
 {
+    System.out.println("Scrivo tutte le proprietà binarie sotto a: " + root.getPath());
     Stack<Node> stackSource = new Stack<Node>();
+    stackSource.push(root);
+    boolean first = true;
     while(!stackSource.empty())
     {
         Node currentSource = stackSource.pop();
         //scrive tutte le proprietà Binary dal repo vecchio al nuovo per questo nodo:
-        Write_BinaryData(currentSource);
+        //System.out.println("Chiamo WriteBinaryData per il nodo: " + currentSource.getPath());
         
+        //salto tutte le prorprietà del nodo root
+        if(!first)
+        {
+            Write_BinaryData(currentSource);
+        }                    
+        first = false;
         
         //controllo se il nodo corrente ha almeno un nodo figlio 
         if(currentSource.hasNodes())
         {
+            //System.out.println("----ha nodi");
             //aggiunge allo stack tutti i suoi figli nodi di primo livello
             NodeIterator ni = currentSource.getNodes();
             int cont = 0;
@@ -511,13 +595,17 @@ static void Sync_BinaryData(Node root) throws RepositoryException
                 //prenderanno per primi i primi nodi
                 childnodes[cont++] = ni.nextNode();                                      
             }
-
+            //System.out.println("----sono qui, cont: " + cont);
             //push in ordine inverso dei nodi
             for(int i = cont - 1; i >= 0; i--)
-            {
+            {                
                 stackSource.push(childnodes[i]);
             }    
-        }        
+        }
+        /*else
+        {
+            System.out.println("non ha nodi");
+        }*/    
     }
             
 }        
@@ -529,10 +617,17 @@ static void Write_BinaryData(Node parent_node) throws RepositoryException
     while(pi.hasNext())
     {
         Property p = pi.nextProperty();
+        //System.out.println("--WriteBinaryData prop: " + p.getPath());
         if(p.getType() == PropertyType.BINARY)
         {
+            //System.out.println("----è binaria");
             //trovo proprietà del repo vecchio
-            Property p_old = s_old.getProperty(p.getPath());
+            
+            String property_path = p.getPath();
+            //String property_path = Rimuovi_Quadre(tmp);
+            //DEBUG
+            //se vedo le [] le elimino
+            Property p_old = s_old.getProperty(property_path);
             if(p.isMultiple())
             {
                 p.setValue(p_old.getValues());
@@ -613,7 +708,8 @@ static void Add_Node(Event e) throws RepositoryException, IOException
         System.out.println("Salto Add_Node()");
         //lo aggiungo negli added_nodes:
         System.out.println("Lo aggiungo negli added nodes:");
-        added_nodes.add(s_new.getNode(adding_node_path));
+        //added_nodes.add(s_new.getNode(adding_node_path));
+        added_nodes.add(adding_node_path);
         return;
     }
         
@@ -624,12 +720,14 @@ static void Add_Node(Event e) throws RepositoryException, IOException
     //perchè se dopo un PERSIST c'è un MOVE di un nodo figlio incompleto, da PathNotFoundException
     if(!s_old.nodeExists(adding_node_path))
     {
-        System.out.println("Add_node() sono nel caso in cui nel repo vecchio non esiste più il nodo da aggiungere, perchè"
-                + "è stato fatto dopo un Move o un REMOVE");
         JcrUtils.getOrCreateByPath(adding_node_path, null, s_new);
         //rileggo nodo aggiuntocon l'istruzione precedente
-        Node incomplete = s_new.getNode(adding_node_path);
-        incomplete_nodes.add(incomplete);
+        //Node incomplete = s_new.getNode(adding_node_path);
+        //incomplete_nodes.add(incomplete);
+        incomplete_nodes.add(adding_node_path);
+        System.out.println("Add_node() sono nel caso in cui nel repo vecchio non esiste più il nodo da aggiungere, perchè"
+                + "è stato fatto dopo un Move o un REMOVE");        
+        System.out.println("Aggiungo nodo " + adding_node_path + " alla liste degli incompleti");        
         return;
     }        
     
@@ -648,7 +746,8 @@ static void Add_Node(Event e) throws RepositoryException, IOException
     ImportaDest(parent_node, baos.toByteArray());    
     
     //aggiunge il nodo importato alla lista dei nodi aggiunti
-    added_nodes.add(s_new.getNode(adding_node_path));
+    //added_nodes.add(s_new.getNode(adding_node_path));
+    added_nodes.add(adding_node_path);
 }
 
 static void Remove_Node(Event e) throws RepositoryException
@@ -658,7 +757,7 @@ static void Remove_Node(Event e) throws RepositoryException
     {
         Node to_remove = s_new.getNode(removing_node_path);        
         //cancello il nodo anche dalla lista degli added_node o degli incomplete_nodes
-        boolean eliminated = false;
+        boolean eliminated = false; 
         eliminated = added_nodes.remove(to_remove);
         if(eliminated)
         {
@@ -702,22 +801,55 @@ static void Move_Node(Event e) throws RepositoryException
         
         //controllo se è stato generato da Node.orderBefore o no
         //in ogni caso i 2 parametri letti sono gli stessi parametri di input che hanno causato l'evento
+        
+        String src_path = "";
+        String dest_path = "";
         try
         {
-            String srcChildRelPath = info.get("dcr:srcChildRelPath").toString();
-            String destChildRelPath = info.get("dcr:destChildRelPath").toString();
+            src_path = info.get("dcr:srcChildRelPath").toString();
+            dest_path = info.get("dcr:destChildRelPath").toString();
             //richiamo il metodo orderBefore con i 2 parametri letti:
             Node to_order = s_new.getNode(e.getPath());
-            to_order.orderBefore(srcChildRelPath, destChildRelPath);
+            to_order.orderBefore(src_path, dest_path);
         }
         catch(Exception ex) //session or workspace move
         {
-            String srcAbsPath = info.get("dcr:srcAbsPath").toString();
-            String destAbsPath = info.get("dcr:destAbsPath").toString();                    
+            src_path = info.get("dcr:srcAbsPath").toString();
+            dest_path = info.get("dcr:destAbsPath").toString();                    
             //leggi JCR observation move and order
-            s_new.move(srcAbsPath, destAbsPath);
+            s_new.move(src_path, dest_path);
             //chiami session move con questi 2 parametri nel repo copia
-        }        
+        }
+        //controllo se il src_path era un nodo incompleto, se lo era lo cambio anche lì
+        for(int i = 0; i < incomplete_nodes.size(); i++)
+        {
+            String s = incomplete_nodes.get(i);
+            if(s.equals(src_path))
+            {
+                //cambio la radice del nodo incompleto
+                    System.out.println("Cambio la radice al nodo incompleto");
+                    incomplete_nodes.set(i, dest_path);
+                    //cambio la radice anche a tutti i nodi figli del nodo incompleto
+                    System.out.println("cambio la radice anche a tutti i nodi figli del nodo incompleto");
+                    //String old_radice = Get_Radice(src_path); //es /a/b diventa /a/d, radice = /a/b
+                    //String new_radice = Get_Radice(dest_path);
+                    String old_radice = src_path;
+                    String new_radice = dest_path;
+                    //per ogni nodo figlio nella lista degli incompleti:
+                    //devo scorrere tutta la lista un' altra volta, e vedere se ogni path contiene la radice
+                    //e sostituirla con la nuova
+                    for(int k = 0; k < incomplete_nodes.size(); k++)
+                    {
+                        String nodo = incomplete_nodes.get(k);
+                        if(Ha_Radice(nodo, old_radice))
+                        {
+                            nodo = Cambia_Radice(nodo, old_radice, new_radice);
+                            //aggiorno nodo figlio con la nuova radice
+                            incomplete_nodes.set(k, nodo);
+                        }    
+                    }    
+            }
+        }    
 }
 
 
@@ -765,11 +897,11 @@ static void Add_Property(Event e) throws RepositoryException
             //controllo se sono nel primo caso
             String path_to_control = old_container.getPath();
             System.out.println("added nodes length = " + added_nodes.size());
-            for(Node n:added_nodes)
+            for(String path:added_nodes)
             {
-                String n_path = n.getPath();
-                System.out.println("CHECK 1st caso: " + n_path + " ==? " + path_to_control);        
-                if(n_path.equals(path_to_control))
+                //String n_path = n.getPath();
+                System.out.println("CHECK 1st caso: " + path + " ==? " + path_to_control);        
+                if(path.equals(path_to_control))
                 {            
                     //sono nel primo caso, non aggiungo la proprietà
                     System.out.println("Salto Add_Property() - added_nodes");
@@ -777,11 +909,11 @@ static void Add_Property(Event e) throws RepositoryException
                 }    
             }
             //stessa cosa per gli incomplete_nodes
-            for(Node n:incomplete_nodes)
+            for(String path:incomplete_nodes)
             {
-                String n_path = n.getPath();
-                System.out.println("CHECK 1st caso: " + n_path + " ==? " + path_to_control);        
-                if(n_path.equals(path_to_control))
+                //String n_path = n.getPath();
+                System.out.println("CHECK 1st caso: " + path + " ==? " + path_to_control);        
+                if(path.equals(path_to_control))
                 {            
                     //sono nel primo caso, non aggiungo la proprietà
                     System.out.println("Salto Add_Property() - incomplete-nodes");
@@ -808,10 +940,20 @@ static void Add_Property(Event e) throws RepositoryException
     catch(PathNotFoundException pe)
     {
         //aggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti
-        System.out.println("Add_Property Catch PathNotFoundException:"
-                + "\r\naggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti");
+
         String parent_node = GetParentNodePath(adding_property_path);
-        incomplete_nodes.add(s_new.getNode(parent_node));
+        //Node container = s_new.getNode(parent_node);
+        //aggiungo il nodo alla lista degli incompleti solo se non è già aggiunto alla lista degli incompleti
+        if(!Is_In_Incomplete_Nodes(parent_node))
+        {
+            incomplete_nodes.add(parent_node);            
+            System.out.println("Add_Property Catch PathNotFoundException:"
+                + "\r\naggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti");            
+        }
+        else
+        {
+            System.out.println("Era già in incomplete_Nodes, non lo riaggiungo");
+        }    
     }        
 }
 
@@ -856,7 +998,8 @@ static void Change_Property(Event e) throws RepositoryException
         System.out.println("Add_Property Catch PathNotFoundException:"
                 + "\r\naggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti");
         String parent_node = GetParentNodePath(changing_property_path);
-        incomplete_nodes.add(s_new.getNode(parent_node));
+        //incomplete_nodes.add(s_new.getNode(parent_node));
+        incomplete_nodes.add(parent_node);
     }                
 }
 
@@ -913,7 +1056,7 @@ static void Remove_Property(Event e) throws RepositoryException
                     System.out.println("Info array: bais available = " + bais.available());
             System.out.println("Info array: buffer length = " + buffer.length);
 
-            s_new.importXML(dest.getPath(), bais, ImportUUIDBehavior.IMPORT_UUID_COLLISION_REMOVE_EXISTING);                    
+            s_new.importXML(dest.getPath(), bais, ImportUUIDBehavior.IMPORT_UUID_COLLISION_REPLACE_EXISTING);                    
             
     }   
 
@@ -921,6 +1064,61 @@ static void Print_Event_Info(Event e) throws RepositoryException
 {
     System.out.println(" - Data: " + e.getDate() + "\r\n - Id: " + e.getIdentifier() + "\r\n - Path: " + e.getPath() + "\r\n - Type: " + getEventTypeName(e.getType()) + "\r\n - UserData " + e.getUserData() + "\r\n - UserID: " + e.getUserID() + "\r\n");                
 }        
-    
+
+static boolean Is_In_Incomplete_Nodes(String path) throws RepositoryException
+{
+    for(String incomplete:incomplete_nodes)
+    {
+        if(incomplete.equals(path))
+        {
+            return true;
+        }    
+    }
+    return false;
+}        
+
+//rimuove le quadre in tuti inodi del percorso
+static String Rimuovi_Quadre(String path)
+{
+    String output = "";
+    for(int i = 0; i < path.length(); i++)
+    {
+        char c = path.charAt(i);
+        if(c == '[')
+        {
+            i += 2;            
+        }
+        else
+        {
+            output += c;
+        }    
+    }
+    return output;
+}        
+
+static String Get_Radice(String path)
+{
+    //restituisce path senza l'ultima / e il nome finale
+    return path.substring(0, path.lastIndexOf('/'));
+}        
+
+static String Cambia_Radice(String path, String old_radice, String new_radice)
+{
+    //do per scontato che la old_radice sia la radice vera del path
+    String nome = path.substring(path.lastIndexOf('/'), path.length());
+    String new_path = new_radice + nome;
+    return new_path;
+}
+
+static boolean Ha_Radice(String path, String radice)
+{
+    String r = Get_Radice(path);
+    if(r.equals(radice))
+    {
+        return true;
+    }
+    return false;
+}
+
 }
 

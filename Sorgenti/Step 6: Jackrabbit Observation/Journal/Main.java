@@ -69,10 +69,10 @@ public class Main {
             String password = "pas4";
             s_old = Session_Login(url, workspace, username, password);                        
             
-            String url2 = "http://localhost:11041/jackrabbit/server/";
+            String url2 = "http://localhost:11047/jackrabbit/server/";
             String workspace2 = "default";
-            String username2 = "uas17";
-            String password2 = "pas17";
+            String username2 = "uqw6";
+            String password2 = "pqw6";
             s_new = Session_Login(url2, workspace2, username2, password2);                                   
             
             System.out.println("Registro namespaces e nodetypes");
@@ -369,19 +369,32 @@ static void Sync_Journal() throws RepositoryException, IOException
     //solo se il nodo esiste nel repo vecchio
     //infatti potrebbero essere rimasti in questa lista dei nodi incompleti figli di altri nodi
     //che sono stati cancellati nel repo, ma non dalla lista
-    System.out.println("numero di nodi incompleti: " + incomplete_nodes.size());
+    //System.out.println("numero di nodi incompleti: " + incomplete_nodes.size());
     //DEBUG 
+    /*
     Iterator<String> itn = incomplete_nodes.iterator();
     while(itn.hasNext())
     {
         System.out.println("path nodo incompleto:  " + itn.next());
     }    
-    
+    */
     boolean export_recursively = true;
-    itn = incomplete_nodes.iterator();
+    Iterator<String> itn = incomplete_nodes.iterator();
     while(itn.hasNext())
     {
         Node incomplete = s_new.getNode(itn.next());
+        /*
+        Node incomplete = null;
+        try
+        {
+            incomplete = 
+        }
+        catch(javax.jcr.PathNotFoundException pe)
+        {
+            //se sono qui è perchè ho un nodo incompleto che è stato spostato
+            //ma è rimasto nella lista dei nodi incompleti
+        }        
+*/
         //se c'è un nodo clone con lo stesso nome e che finisce quindi con le [], è solo per debug
         String tmp = "";
         String incomplete_path = "";
@@ -424,9 +437,7 @@ static void Sync_Journal() throws RepositoryException, IOException
             String parent_node_path = GetParentNodePath(incomplete_path); //prende il path fino all'ultima sbarra / (senza la sbarra, es /home/luca ritorna /home)            
             Node parent_node = s_new.getNode(parent_node_path);                        
 
-            //cancello il nodo che verrà poi esportato dal repo vecchio e aggiunto nel padre del repo nuovo
-            
-            Node dfssf2 = s_new.getNode(incomplete_path);
+            //cancello il nodo che verrà poi esportato dal repo vecchio e aggiunto nel padre del repo nuovo                        
             System.out.println("cancello nodo " + incomplete_path);
             try
             {
@@ -704,7 +715,8 @@ static void Add_Node(Event e) throws RepositoryException, IOException
     */
     if(s_new.nodeExists(adding_node_path))
     {
-        //se il nodo esiste già non faccio niente
+    System.out.println("Esiste già nel repo nuovo");    
+    //se il nodo esiste già non faccio niente
         System.out.println("Salto Add_Node()");
         //lo aggiungo negli added_nodes:
         System.out.println("Lo aggiungo negli added nodes:");
@@ -712,6 +724,15 @@ static void Add_Node(Event e) throws RepositoryException, IOException
         added_nodes.add(adding_node_path);
         return;
     }
+    else
+    {
+        //se non esiste, può essere per 2 motivi:
+        //1) il nodo è stato aggiunto nuovo completamente
+        //2) è stato aggiunto il nodo padre, nel futuro questo nodo verrà spostato o eliminato nel repo vecchio
+        //quindi quando aggiungi il padre con export import non aggiungi il figlio
+      
+    }    
+    
         
     //se il nodo non esiste più nel repo vecchio, vuol dire che dopo è stato fatto un NODE_REMOVED
     //o un NODE_MOVED, quindi lo aggingo solo con il nome e lo metto nella lista degli incompleti
@@ -817,6 +838,22 @@ static void Move_Node(Event e) throws RepositoryException
             src_path = info.get("dcr:srcAbsPath").toString();
             dest_path = info.get("dcr:destAbsPath").toString();                    
             //leggi JCR observation move and order
+            
+            //N.B.
+            //prima di fare la move() devo controllare se il nodo destinazione esiste già
+            //se esiste già e faccio move mi crea un alias con [2] alla fine del nome del nodo
+            //es:
+            //prima fai NODE_ADDED di /img che ha come figlio /img/b
+            //fai export import xkè il nodo /img esiste ancora nel repo vecchio
+            //poi dopo fai una move di: /a/b/c/d in /img/b
+            //prima di fare la move devo quindi cancellare il nodo destinazione, 
+            //in questo caso cancello /img/b
+            if(s_new.nodeExists(dest_path))
+            {
+                //lo cancello
+                s_new.removeItem(dest_path);
+            }    
+            
             s_new.move(src_path, dest_path);
             //chiami session move con questi 2 parametri nel repo copia
         }
@@ -827,7 +864,7 @@ static void Move_Node(Event e) throws RepositoryException
             if(s.equals(src_path))
             {
                 //cambio la radice del nodo incompleto
-                    System.out.println("Cambio la radice al nodo incompleto");
+                    System.out.println("Cambio la radice al nodo incompleto " + src_path + " in " + dest_path);
                     incomplete_nodes.set(i, dest_path);
                     //cambio la radice anche a tutti i nodi figli del nodo incompleto
                     System.out.println("cambio la radice anche a tutti i nodi figli del nodo incompleto");
@@ -843,9 +880,10 @@ static void Move_Node(Event e) throws RepositoryException
                         String nodo = incomplete_nodes.get(k);
                         if(Ha_Radice(nodo, old_radice))
                         {
-                            nodo = Cambia_Radice(nodo, old_radice, new_radice);
+                            String nodo_nuovo = Cambia_Radice(nodo, old_radice, new_radice);
                             //aggiorno nodo figlio con la nuova radice
-                            incomplete_nodes.set(k, nodo);
+                            incomplete_nodes.set(k, nodo_nuovo);
+                            System.out.println("--cambio nodo figlio " + nodo + " in " + nodo_nuovo);                            
                         }    
                     }    
             }
@@ -924,7 +962,7 @@ static void Add_Property(Event e) throws RepositoryException
         //se arrivo qui sono nel secondo caso
            //aggiungo la proprietà nel nodo del repo nuovo, 
             //leggendo il nome e il valore dallo stesso nodo del repo vecchio:
-
+System.out.println("Chiamo Add_Property(), il nodo non è ne incompleto, ne aggiunto in questa sessione");
             //aggiungo la proprietà:
             //--controllo se è multipla o no
             if(old_p.isMultiple())
@@ -937,18 +975,20 @@ static void Add_Property(Event e) throws RepositoryException
             }    
     
     }
-    catch(PathNotFoundException pe)
+    catch(PathNotFoundException pe) //la proprietà non esiste nel nodo del repo vecchio, sarà cancellata in futuro
     {
         //aggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti
 
         String parent_node = GetParentNodePath(adding_property_path);
+            
         //Node container = s_new.getNode(parent_node);
         //aggiungo il nodo alla lista degli incompleti solo se non è già aggiunto alla lista degli incompleti
         if(!Is_In_Incomplete_Nodes(parent_node))
         {
             incomplete_nodes.add(parent_node);            
             System.out.println("Add_Property Catch PathNotFoundException:"
-                + "\r\naggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti");            
+                + "\r\naggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti"
+                    + "\r\n nodo = " + parent_node);            
         }
         else
         {
@@ -994,19 +1034,33 @@ static void Change_Property(Event e) throws RepositoryException
     }
     catch(PathNotFoundException pe)
     {
-        //aggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti
-        System.out.println("Add_Property Catch PathNotFoundException:"
-                + "\r\naggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti");
         String parent_node = GetParentNodePath(changing_property_path);
-        //incomplete_nodes.add(s_new.getNode(parent_node));
-        incomplete_nodes.add(parent_node);
+        if(!Is_In_Incomplete_Nodes(parent_node))
+        {
+            incomplete_nodes.add(parent_node);            
+            System.out.println("Add_Property Catch PathNotFoundException:"
+                + "\r\naggiungo il nodo contenitore della proprietà alla lista dei nodi incompleti"
+                    + "\r\n nodo = " + parent_node);            
+        }
+        else
+        {
+            System.out.println("Era già in incomplete_Nodes, non lo riaggiungo");
+        }
     }                
 }
 
 static void Remove_Property(Event e) throws RepositoryException
 {
+    try
+    {
         Property p = s_new.getProperty(e.getPath());
-        p.remove();        
+        p.remove();                
+    }
+    catch(javax.jcr.PathNotFoundException pe)
+    {
+        //la propretà non esiste, non la cancello
+    }    
+
 }
 
     static ByteArrayOutputStream EsportaSource(Node source, boolean export_recursively) throws RepositoryException, IOException
@@ -1094,30 +1148,39 @@ static String Rimuovi_Quadre(String path)
         }    
     }
     return output;
-}        
-
-static String Get_Radice(String path)
-{
-    //restituisce path senza l'ultima / e il nome finale
-    return path.substring(0, path.lastIndexOf('/'));
-}        
+}             
 
 static String Cambia_Radice(String path, String old_radice, String new_radice)
 {
     //do per scontato che la old_radice sia la radice vera del path
-    String nome = path.substring(path.lastIndexOf('/'), path.length());
+    String nome = path.substring(old_radice.length(), path.length());
     String new_path = new_radice + nome;
     return new_path;
 }
 
 static boolean Ha_Radice(String path, String radice)
 {
-    String r = Get_Radice(path);
-    if(r.equals(radice))
+    //controllo carattere per carattere, se i primi caratteri di path sono gli stessi di tutti i caratteri di radice
+    //path.length > radice.length, altrimenti è false
+    int path_length = path.length();
+    int radice_length = radice.length();
+    if(path_length < radice_length)
     {
-        return true;
-    }
-    return false;
+        return false;
+    }    
+
+    //controllo carattere per carattere
+    for(int i = 0; i < radice_length; i++)
+    {
+        char p = path.charAt(i);
+        char r = radice.charAt(i);
+        if(p != r)
+        {
+            return false;
+        }    
+    }    
+
+    return true;
 }
 
 }
