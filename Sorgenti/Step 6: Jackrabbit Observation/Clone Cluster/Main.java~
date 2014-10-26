@@ -21,9 +21,6 @@ import org.apache.jackrabbit.api.*;
 import org.apache.jackrabbit.core.*;
 import org.apache.jackrabbit.core.config.*;
 
-import org.apache.jackrabbit.commons.JcrUtils;
-import javax.jcr.observation.*;
-
 /**
  *
  * @author luca
@@ -55,7 +52,6 @@ public class Main {
     
     
 //primo nodo jackrabbit che appartiene al nuovo cluster copiato
-    static String jr_node_host = "";
     static String jr_node_name = "";
     //cartella che contiene cartelle tomcat e repo
     static String jr_node_root_path = "";
@@ -127,18 +123,13 @@ public class Main {
                 db_user = args[++i];
                 db_password = args[++i];
             }
-            if(args[i].equals("-host"))
-            {            
-                jr_node_host = args[++i];
-            }            
             if(args[i].equals("--help"))
             {
                 System.out.println(""
                         + "\r\nParametri disponibili:\r\n\r\n"
                         + "-oldname <cluster name to copy>,\r\n"
                         + "-newname <cluster name cloned>,\r\n"
-                        + "-dbuser <username> <password>, credenziali utente per repository jackrabbit\r\n"
-                        + "-host <host nuovo nodo cluster url>, es. localhost, www.node1.com");                
+                        + "-dbuser <username> <password>, credenziali utente per repository jackrabbit\r\n");                
                 System.exit(0);
             }              
         }
@@ -146,9 +137,6 @@ public class Main {
 
 static void Create_New_Cluster() throws IOException, InterruptedException, SQLException
 {
-            //aggiunge alla tabella JRSAAS_CONFIG.CLUSTER le info del nuovo cluster che verrà creato
-        Insert_MySql_Row_Cluster();
-    
         CreateClusterFolders();
         
         CreateJR_NodeFolders();       
@@ -175,26 +163,9 @@ static void Create_New_Cluster() throws IOException, InterruptedException, SQLEx
        //crea persistence manager (pm) in mysql
        //crea database mysql nuovo per questa istanza di tomcat e repository jackrabbit
        //crea utente con permessi di lettura e scrittura solo per questo database
-       CreaMySqlPM();      
+       CreaMySqlPM();        
     
 }
-
-static void Insert_MySql_Row_Cluster() throws SQLException
-{
-       //inserisce nome istanza nel database JRSAAS mysql e le 3 porte configurate        
-        Connection cn = DriverManager.getConnection("jdbc:mysql://" + MYSQL_URL + "/" + MYSQL_JRSAAS_CONFIG_DB + "?user=" + USER_JRSAAS + "&password=" + USER_JRSAAS_PWD + "");
-        Statement s = cn.createStatement();
-        String cmd = "INSERT INTO " + MYSQL_JRSAAS_CONFIG_DB + "." + MYSQL_TABLE_CLUSTER + " VALUES (" 
-                + "'" + new_cluster_name + "', "
-                + "'" + db_user + "', "
-                + "'" + db_password + "', "
-                + "'" + MYSQL_URL + "', "
-                + "'" + new_cluster_pm_name + "');";
-        System.out.println("Aggiungo riga a CLUSTER:\r\n\r\n" + cmd);
-        int Result = s.executeUpdate(cmd);
-        cn.close();    
-}        
-
 
 //come per l'hotbackup, blocca il cluster da copiare
 static void Clone_Cluster() throws SQLException, IOException, InterruptedException
@@ -254,7 +225,7 @@ static void Clone_Cluster() throws SQLException, IOException, InterruptedExcepti
         s.executeUpdate("UNLOCK TABLES;");
     }        
 
-static void ClonePersistenceManager() throws IOException, InterruptedException, SQLException
+static void ClonePersistenceManager() throws IOException, InterruptedException
 {
         //esporta persistence manager (database mysql)
         //dentro alla cartella di backup del cluster vecchio
@@ -267,19 +238,8 @@ static void ClonePersistenceManager() throws IOException, InterruptedException, 
         //importa persistence manager nel nuovo cluster
        cmd = "sudo mysql -u " + ADMIN_JRSAAS + " -p" + ADMIN_JRSAAS_PWD + " " + new_cluster_pm_name + " < " + old_cluster_backup_path + "/pm.sql";
        System.out.println("\r\nRestore Persistence Manager: " + cmd);
-       status =  ForkProcess(cmd);
-       
-       //prende l'ultima data presente nel journal del cluster vecchio:
-//       long last_date = Get_LastDate(old_cluster_name);
-       
-        //aggiunge alla tabella SYNC l'ultima data alla quale è sincronizzato con il journal
-       /*
-       Connection cn = DriverManager.getConnection("jdbc:mysql://" + MYSQL_URL + "/" + new_cluster_pm_name + "?user=" + ADMIN_JRSAAS + "&password=" + ADMIN_JRSAAS_PWD + "");
-       Statement s = cn.createStatement();
-       int Result = s.executeUpdate("INSERT INTO " + new_cluster_pm_name + ".SYNC VALUES('" + old_cluster_name + "'," + last_date + ");");
-      
-       cn.close();
-      */  
+       status =  ForkProcess(cmd);     
+        
 }        
 
 static void CloneDatastore() throws IOException, InterruptedException
@@ -397,7 +357,7 @@ static void CloneDatastore() throws IOException, InterruptedException
        
        //Update INSTANCE DB, ADD 3 porte
        System.out.println("\r\nAggiunge riga alla tabella INSTANCE con le 3 porte per la nuova istanza");
-       Insert_MySql_Row_Cluster_Node(ports);
+       UpdateDB(ports);
        
        return ports[0]; //ritorna la connector port dell'istanza di tomcat
    }
@@ -490,22 +450,18 @@ static void CloneDatastore() throws IOException, InterruptedException
         }        
    }
    
-    public static void Insert_MySql_Row_Cluster_Node(int[] ports) throws SQLException
+   public static void UpdateDB(int[] ports) throws SQLException
    {
        //inserisce nome istanza nel database JRSAAS mysql e le 3 porte configurate
-        Connection cn = DriverManager.getConnection("jdbc:mysql://" + MYSQL_URL + "/" + MYSQL_JRSAAS_CONFIG_DB + "?user=" + USER_JRSAAS + "&password=" + USER_JRSAAS_PWD + "");        
+        Connection cn = DriverManager.getConnection("jdbc:mysql://" + MYSQL_URL + "/" + MYSQL_JRSAAS_CONFIG_DB + "?user=" + USER_JRSAAS + "&password=" + USER_JRSAAS_PWD + "");
         Statement s = cn.createStatement();
-        String cmd = "INSERT INTO " + MYSQL_JRSAAS_CONFIG_DB + "." + MYSQL_TABLE_CLUSTER_NODE + " VALUES ("
+        int Result = s.executeUpdate("INSERT INTO " + MYSQL_JRSAAS_CONFIG_DB + "." + MYSQL_TABLE_INSTANCE + " VALUES ("
                 + "'" + jr_node_name + "'," //nome del nodo jackrabbit
-                + "'" + new_cluster_name + "'," //nome del cluster, foreign key CLUSTER.nome
-                + "'" + jr_node_host + "'," //host del primo nodo jackrabbit del cluster
                 + ports[0] + ", "   //connector port
                 + ports[1] + ", "  //shutdown port
-                + ports[2] + ");"; //ajp port
-        System.out.println("Aggiungo riga a CLUSTER_NODE: \r\n\r\n" + cmd);
-        int Result = s.executeUpdate(cmd); 
+                + ports[2] + ");"); //ajp port
         cn.close();
-        System.out.println("1 riga aggiunta alla tabella " + MYSQL_TABLE_CLUSTER_NODE + " \r\n");       
+        System.out.println("1 riga aggiunta alla tabella " + MYSQL_TABLE_INSTANCE + " \r\n");       
    }        
    
     public static int FindFreePort(int min_port, int max_port, String port_column_name) throws IOException, SQLException 
@@ -550,7 +506,7 @@ static void CloneDatastore() throws IOException, InterruptedException
                 */       
         Connection cn = DriverManager.getConnection("jdbc:mysql://" + MYSQL_URL + "/" + MYSQL_JRSAAS_CONFIG_DB + "?user=" + USER_JRSAAS + "&password=" + USER_JRSAAS_PWD + "");
         Statement s = cn.createStatement();
-        ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM " + MYSQL_TABLE_CLUSTER_NODE + " WHERE " + port_column_name + " = " + port + " AND host = '" + jr_node_host + "'");
+        ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM " + MYSQL_TABLE_INSTANCE + " WHERE " + port_column_name + " = " + port);
         //prende il valore di count
         rs.next();
         int count = rs.getInt("COUNT(*)");
@@ -563,7 +519,7 @@ static void CloneDatastore() throws IOException, InterruptedException
             return true; //used = true
         }
         return false; //used = true
-   }
+   }         
     
    static void CreateScripts() throws IOException, InterruptedException
    {
@@ -827,15 +783,6 @@ static void CloneDatastore() throws IOException, InterruptedException
         
         //inserisce primo record: id = 1 e nome del primo nodo jackrabbit
         Result = s.executeUpdate("INSERT INTO " + new_cluster_pm_name + ".NODE VALUES(1,'" + jr_node_name + "');");
-        
-       //crea la tabella Sync dentro al database del persistence manager
-        Result = s.executeUpdate("Create Table " + new_cluster_pm_name + ".SYNC(\n" +
-"\n" +
-"Cluster varchar(30) not null,\n" +
-"Data date not null,\n" +
-"primary key (Cluster, Data)\n" +
-"\n" +
-");");               
         
          cn.close();
    }      
@@ -1543,54 +1490,5 @@ static void CleanLog(String tomcat_log) throws IOException
     f2.write("");
     f2.close();    
 }        
-
-/*
-static long Get_LastDate(String cluster_name) throws RepositoryException
-{
-
-    //LEGGE DA CONFIG.INSTANCE il numero di porta, username e password
     
-            String url = "http://localhost:11008/jackrabbit/server/";
-            String workspace = "default";
-
-           // DavexClient Client = new DavexClient(url);
-            //Repository repo = Client.getRepository();
-            Repository repo = JcrUtils.getRepository(url);
-            Credentials sc = new SimpleCredentials("usc1","psc1".toCharArray());
-            Session s = repo.login(sc,workspace);
-
-            // System.out.println("REPOSITORY CAPACITIES:");
-            // System.out.println(" " + Repository.OPTION_OBSERVATION_SUPPORTED + " = " + repo.getDescriptorValue(Repository.OPTION_OBSERVATION_SUPPORTED).getBoolean());
-            // System.out.println(" " + Repository.OPTION_JOURNALED_OBSERVATION_SUPPORTED + " = " + repo.getDescriptorValue(Repository.OPTION_JOURNALED_OBSERVATION_SUPPORTED).getBoolean() + "\n");
-
-            ObservationManager omgr = s.getWorkspace().getObservationManager();
-
-            // ----- READ THE EVENT JOURNAL -----------------------------------
-
-            System.out.println("\nJournal content:");
-
-            //EventJournal j = omgr.getEventJournal();
-            EventJournal j = omgr.getEventJournal(Event.NODE_ADDED | Event.PROPERTY_ADDED | Event.NODE_REMOVED | Event.NODE_MOVED | Event.PROPERTY_REMOVED | Event.PROPERTY_CHANGED | Event.PERSIST, "/", true, null, null);
-
-            try 
-            {                
-                //provo skip to date
-                long last = 1412869802634L;
-                j.skipTo(last);
-                
-                //se non ce ne sono altri, va nel catch
-                Event e = j.nextEvent();                
-                while (true) 
-                {
-                    System.out.println(" - Data: " + e.getDate() + "\r\n - Id: " + e.getIdentifier() + "\r\n - Path: " + e.getPath() + "\r\n - Type: " + getEventTypeName(e.getType()) + "\r\n - UserData " + e.getUserData() + "\r\n - UserID: " + e.getUserID() + "\r\n");
-                    e = j.nextEvent();
-                }
-            } 
-            catch (NoSuchElementException ex) 
-            {
-                System.out.println(" No more events\n");
-            }            
-}        
-*/
 }
-
