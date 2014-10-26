@@ -4,7 +4,7 @@
  * and open the template in the editor.
  */
 
-package com.luca.observation;
+package com.luca.asincrono;
 
 import javax.jcr.Credentials;
 import javax.jcr.Node;
@@ -25,7 +25,7 @@ import javax.jcr.observation.EventListenerIterator;
 
 //import ch.liip.jcr.davex.DavexClient;
 
-import com.luca.observation.MyListener;
+import com.luca.asincrono.MyListener;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
@@ -43,85 +43,54 @@ public class Main {
         //try 
         //{
 
-            String url = "http://localhost:11000/jackrabbit/server/";
-            String workspace = "default";
+     String url_old = "http://localhost:11050/jackrabbit/server/";
+     String workspace_old = "default";
+     String db_user_old = "usd3";
+     String db_pass_old = "psd3";
+     
+     String url_new = "http://localhost:11049/jackrabbit/server/";
+     String workspace_new= "default";
+     String db_user_new = "usd2";
+     String db_pass_new = "psd2";    
+        
+     Session s_old = Session_Login(url_old, workspace_old, db_user_old, db_pass_old);
+     Session s_new = Session_Login(url_new, workspace_new, db_user_new, db_pass_new);     
 
-           // DavexClient Client = new DavexClient(url);
-            //Repository repo = Client.getRepository();
-            Repository repo = JcrUtils.getRepository(url);
-            Credentials sc = new SimpleCredentials("usc1","psc1".toCharArray());
-            Session s = repo.login(sc,workspace);
+    ObservationManager omgr = s_old.getWorkspace().getObservationManager();
 
-            // System.out.println("REPOSITORY CAPACITIES:");
-            // System.out.println(" " + Repository.OPTION_OBSERVATION_SUPPORTED + " = " + repo.getDescriptorValue(Repository.OPTION_OBSERVATION_SUPPORTED).getBoolean());
-            // System.out.println(" " + Repository.OPTION_JOURNALED_OBSERVATION_SUPPORTED + " = " + repo.getDescriptorValue(Repository.OPTION_JOURNALED_OBSERVATION_SUPPORTED).getBoolean() + "\n");
+    // ----- ATTACH SOME EVENT LISTENER -------------------------------
 
-            ObservationManager omgr = s.getWorkspace().getObservationManager();
+    MyListener syncronize = new MyListener();
+    syncronize.s_old = s_old;
+    syncronize.s_new = s_new;
+    
+    omgr.addEventListener(
+    syncronize,
+    Event.NODE_ADDED | Event.PROPERTY_ADDED | Event.NODE_REMOVED | Event.NODE_MOVED | Event.PROPERTY_REMOVED | Event.PROPERTY_CHANGED | Event.PERSIST, // Listen to node additions
+    //Event.NODE_ADDED, // Listen to node additions
+    "/", // On root node...
+    true, // ...and below
+    null, // No filter on UUID
+    null, // No filter on type name
+    //false // Listen to local events as well
+    true //solo per una sessione esterna? I nodi modificati da questa sessione non si vedono
+    );
 
-            // ----- ATTACH SOME EVENT LISTENER -------------------------------
-
-            omgr.addEventListener(
-            new MyListener(),
-            Event.NODE_ADDED | Event.PROPERTY_ADDED | Event.NODE_REMOVED | Event.NODE_MOVED | Event.PROPERTY_REMOVED | Event.PROPERTY_CHANGED | Event.PERSIST, // Listen to node additions
-            //Event.NODE_ADDED, // Listen to node additions
-            "/", // On root node...
-            true, // ...and below
-            null, // No filter on UUID
-            null, // No filter on type name
-            //false // Listen to local events as well
-            true //solo per un repo esterno? I nodi modificati da qua non si vedono
-            );
-
-            // ----- ENUMERATE EVENT LISTENERS --------------------------------
-
-            System.out.println("Registered event listeners:");
-            EventListenerIterator it = omgr.getRegisteredEventListeners();
-
-            try 
-            {
-                EventListener el = it.nextEventListener();
-                while (true) 
-                {
-                    System.out.println(" " + el);
-                    el = it.nextEventListener();
-                }
-            } 
-            catch (NoSuchElementException ex) 
-            {
-                System.out.println(" No more event listeners\n");
-            }
-            
-            System.out.println(" In attesa...\n");
-            
-            while(true);
+    while(true)
+    {
+        System.out.println("In attesa di eventi\r\n");
+        Thread.sleep(5000);
+    }    
         
 }
     
-
-
-    static void InsertImage(Node hello, int i) throws RepositoryException, FileNotFoundException
-    {
-            //stream all'immagine
-            String filePath = "/home/luca/Scrivania/b.jpg";
-            InputStream fileStream = new FileInputStream(filePath); 
-        
-//nodi necessari per l'inserimento dell'immagine
-            Node img = hello.addNode("img"+i,"nt:file"); 
-            Node bin = img.addNode("jcr:content","nt:resource"); 
-    // First check the type of the file to add
-                        MimeTable mt = MimeTable.getDefaultTable();
-                        String mimeType = mt.getContentTypeFor(filePath);
-                        if (mimeType == null)
-                        {
-                                mimeType = "application/octet-stream";
-                        }
-                        
-               // set the mandatory properties
-                        bin.setProperty("jcr:data", fileStream);
-                        bin.setProperty("jcr:lastModified", Calendar.getInstance());
-                        bin.setProperty("jcr:mimeType", mimeType); 
-
-    }        
+static Session Session_Login(String url, String workspace, String username, String password) throws RepositoryException
+{
+        Repository repo = JcrUtils.getRepository(url);
+        Credentials sc = new SimpleCredentials(username,password.toCharArray());
+        Session s = repo.login(sc,workspace);    
+        return s;
+}   
 
 static String getEventTypeName(int type)
 { 
