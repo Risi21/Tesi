@@ -23,16 +23,18 @@ public class Constants {
     ReadConstants(), poi vengono salvate nelle variabili public
     */
     
+    //DEFINITE
     public static final String CATALINA_HOME = "/usr/share/tomcat-8.0.12"; //versione di tomcat installata nel server
     public static final String TOMCAT_CONF = "/usr/share/tomcat-8.0.12/conf"; //file di configurazione di tomcat       
     
     public static final String ROOT_CLUSTER_PATH = "/srv/cluster"; //contiene tutti i repository di jackrabbit, hanno lo stesso nome dell'istanza di tomcat associata
     public static final String JACKRABBIT_WEBAPP_DIRNAME = "jackrabbit"; //nome della jackrabbit-webapp deployata dal .war, in tomcat/webapps
 
+    //DEFINITO
     public static final int SYNC_DELAY = 5000; //ms, ogni quanto tempo legge il journal per aggiornare repository
-
+    
     //Definisce Range in cui cercare una porta per una nuova istanza di tomcat
-    //per uno dei 3 servizi: connector, shutdown, ajp
+    //per uno dei 3 servizi: connector, shutdown, ajp: DEFINITI
     public static final int CONNECTOR_MIN = 11000;
     public static final int CONNECTOR_MAX = 11999;
     public static final int SHUTDOWN_MIN = 12000;
@@ -42,13 +44,14 @@ public class Constants {
     
     //url MySql server:
     public static final String MYSQL_URL = "localhost:3306";
-    //nome del database di configurazione mysql:
+    //nome del database di configurazione mysql: DEFINITO
     public static final String MYSQL_JRSAAS_CONFIG_DB = "JRSAAS_CONFIG";
-    //prefisso di ogni database mysql di ogni repository jackrabbit creato
+    //prefisso di ogni database mysql di ogni repository jackrabbit creato: DEFINITO
     public static final String MYSQL_PM_PREFIX = "JRSAAS_CLUSTER_"; //ogni db ha poi il nome dell'istanza di tomcat associata
     
     //nome della tabella che contiene le configurazioni delle istanze di tomcat
-    public static final String MYSQL_TABLE_INSTANCE = "INSTANCE";
+    public static final String MYSQL_TABLE_CLUSTER = "CLUSTER";
+    public static final String MYSQL_TABLE_CLUSTER_NODE = "CLUSTER_NODE";
     public static final String MYSQL_INSTANCE_COLUMN_CONNECTOR_PORT = "Connector_Port";
     public static final String MYSQL_INSTANCE_COLUMN_SHUTDOWN_PORT = "Shutdown_Port";
     public static final String MYSQL_INSTANCE_COLUMN_AJP_PORT = "Ajp_Port";
