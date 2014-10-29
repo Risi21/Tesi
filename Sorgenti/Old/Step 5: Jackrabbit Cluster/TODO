@@ -1,0 +1,4 @@
+Fai un app simile allo step2, che però usa il percorso /srv/cluster/.../datastore per il datastore e che
+setti il cluster con il journal nel repository.xml
+
+Fai un altra app che aggiunge un nuovo nodo jackrabbit al cluster.

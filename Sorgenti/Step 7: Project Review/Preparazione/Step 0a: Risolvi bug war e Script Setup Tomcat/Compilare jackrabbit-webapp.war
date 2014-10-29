@@ -1,0 +1,65 @@
+Correggere bug ImportXML() del jackrabbit-webapp.war:
+
+scarica i sorgenti dal sito di jackrabbitt ed estraili in una cartella
+
+apri il file con gedit:
+
+...../jackrabbit-webdav/src/main/java/org/apache/jackrabbit/webdav/AbstractLocatorFactory.java
+
+aggiungi queste righe di codice (trovale nel file con gli occhi):
+
+sotto alla linea 105, per capirci devi aggiungere questo codice:
+
+//EDIT: add coded
+ /*Added new code start*/
+if(!href.startsWith(pathPrefix)&& href.contains(pathPrefix))
+{ href = href.substring(href.indexOf(pathPrefix)+pathPrefix.length()); }
+
+/*Added new code end*/
+
+
+sotto a queste righe i codice:
+
+
+        if (pathPrefix != null && pathPrefix.length() > 0) {
+            if (!b.toString().endsWith(pathPrefix)) {
+                b.append(pathPrefix);
+            }
+            if (href.startsWith(pathPrefix)) {
+                href = href.substring(pathPrefix.length());
+            }
+
+
+Fatto questo, salva.
+
+poi da terminale, spostati col cd dentro alla cartella jackrabbit-webdav, poi lancia il comando:
+
+mvn clean package
+
+una volta finito, vai in 
+
+jackrabbit-webdav/target
+
+e vedi che dentro c'è il file chiamato jackrabbit-webdav-2.8.0.jar
+
+Ora, apri il jackrabbit.war con l'archive manager,
+
+vai in WEB-INF/lib
+
+cancella il file vecchio jackrabbit-webdav-2.8.0.jar
+
+poi fai aggiungi file
+
+e selezioni il nuovo jackrabbit-webdav-2.8.0.jar compilato dentro alla cartella target di prima.
+
+Ora il jackrabbit.war è pronto per essere utilizzato
+
+---------------------------------------------
+
+-Rebuild di jackrabbit.war, modificando il file di prima e correggendo il bug per l'importXML:
+
+-mvn clean package 
+
+-sia su jackrabbit-webapp che su jackrabbit-core, poi mettere jackrabbit-core.jar dentro a jackrabbit-webapp.war
+
+------------------------------------------------------
