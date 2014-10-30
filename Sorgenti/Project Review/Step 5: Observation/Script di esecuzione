@@ -1,0 +1,8 @@
+Prima si esegue il Clone Cluster
+
+poi si fa un ciclo while, 
+finchè la data dell'ultimo evento è diversa nei 2 cluster (originale e clone)
+chiami il programma Journal, che rifa gli eventi nel cluster clone, così è sincronizzato con il cluster originale
+
+Infine chiami il programma Asincrono,
+che rifa gli eventi qualora si verificano

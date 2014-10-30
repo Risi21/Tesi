@@ -1,8 +1,0 @@
-e.getDate è uguale per ogni evento fatto nella stessa session.save()
-
-Capire come ordinare gli eventi
-
-PERSIST generato quando viene fatta session.save()
-
-Prova a far generare tutti gli eventi, anche cambiando te lordine, per vedere se nel journal
-sono scritti sempre nello stesso ordine logico o se dipendono dalle operazioni.
